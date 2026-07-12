@@ -785,6 +785,7 @@ function renderHistory() {
 }
 
 function renderSettings() {
+  const showInstallBtn = !!deferredInstallPrompt;
   setViewHtml(`
     ${sectionHeader("الإعدادات", "اضبط طريقة الاستماع على هذا الجهاز", "", "")}
     <section class="settings-panel" aria-label="إعدادات التشغيل">
@@ -799,7 +800,29 @@ function renderSettings() {
         </button>
       </div>
     </section>
+    ${showInstallBtn ? `
+    <section class="settings-panel" aria-label="تثبيت التطبيق" style="margin-top: 12px;">
+      <div class="settings-row">
+        <div>
+          <h3>تثبيت التطبيق</h3>
+          <p>أضف أثير القرآن إلى شاشتك الرئيسية للوصول السريع بدون اتصال.</p>
+        </div>
+        <button class="cta-button" type="button" id="installPwaBtn" aria-label="تثبيت التطبيق">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-inline-end:6px"><path d="M12 2v13m0 0l-4-4m4 4l4-4"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+          تثبيت
+        </button>
+      </div>
+    </section>` : ""}
   `);
+  if (showInstallBtn) {
+    document.getElementById("installPwaBtn")?.addEventListener("click", async () => {
+      if (!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      const { outcome } = await deferredInstallPrompt.userChoice;
+      if (outcome === "accepted") deferredInstallPrompt = null;
+      render();
+    });
+  }
 }
 
 function empty(title, text, action = "") {
@@ -999,6 +1022,11 @@ function syncPlayingCards() {
       playing = !!latest && isCurrentSurahPlaying(latest.reciterId, latest.surahId);
     }
     container.classList.toggle("playing", playing);
+    // Fix: also update the live-badge text so it reverts when radio is stopped/exited
+    const liveBadge = container.querySelector(".live-badge");
+    if (liveBadge && radioBtn) {
+      liveBadge.innerHTML = `<i class="live-dot"></i>${playing ? "قيد التشغيل" : "بث مباشر"}`;
+    }
     const btn = radioBtn || surahBtn || dlBtn || resumeBtn;
     if (btn) {
       const iconTarget = isMiniItem ? btn.querySelector(".mini-item-icon") : btn;
@@ -1346,15 +1374,22 @@ els.audio.addEventListener("ended", () => {
 
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();
+  deferredInstallPrompt = event;
   state.deferredInstall = event;
   els.installApp.classList.remove("hidden");
+  // Re-render settings if that tab is active so the install button appears
+  if (state.activeTab === "settings") render();
 });
 els.installApp.addEventListener("click", async () => {
   if (!state.deferredInstall) return;
   state.deferredInstall.prompt();
-  await state.deferredInstall.userChoice;
-  state.deferredInstall = null;
-  els.installApp.classList.add("hidden");
+  const { outcome } = await state.deferredInstall.userChoice;
+  if (outcome === "accepted") {
+    deferredInstallPrompt = null;
+    state.deferredInstall = null;
+    els.installApp.classList.add("hidden");
+    if (state.activeTab === "settings") render();
+  }
 });
 
 if ("serviceWorker" in navigator && import.meta.env?.PROD) {
