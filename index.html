@@ -10,14 +10,8 @@
     <meta property="og:title" content="أثير القرآن — منصة القرآن الكريم المتكاملة" />
     <meta property="og:description" content="استمع إلى كلام الله في أجمل تلاوة وأصفى بث. إذاعات مباشرة، مكتبة صوتية متكاملة، وتشغيل دون اتصال." />
     <meta property="og:type" content="website" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="أثير القرآن" />
     <title>أثير القرآن — منصة القرآن الكريم المتكاملة</title>
-    <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/icon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400;1,700&family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet" />
@@ -68,9 +62,6 @@
               </svg>
             </span>
           </button>
-          <button class="install-button hidden" id="installApp" type="button" aria-label="تثبيت التطبيق">
-            تثبيت
-          </button>
         </div>
 
       </div>
@@ -103,6 +94,10 @@
     </header>
 
     <main class="shell main" id="main-content">
+      <aside class="network-status hidden" id="networkStatus" aria-label="حالة الاتصال">
+        <p id="networkMessage" role="status" aria-live="polite"></p>
+        <button class="network-action" type="button" data-go-tab="downloads">عرض تنزيلاتي</button>
+      </aside>
       <section id="view" role="tabpanel" aria-live="polite" aria-atomic="false"></section>
     </main>
 

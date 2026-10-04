@@ -6,6 +6,7 @@ export default defineConfig({
     port: 5173
   },
   build: {
-    target: "es2018"
+    target: "es2018",
+    sourcemap: false
   }
 });

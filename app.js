@@ -1,3 +1,5 @@
+import { RadioRecovery } from "./src/audio/radio-recovery.js";
+
 const API = "https://mp3quran.net/api/v3";
 const VALID_TABS = new Set(["home", "radios", "library", "downloads", "history", "settings"]);
 
@@ -13,13 +15,6 @@ const FALLBACK_RADIOS = [
   { id: 3, name: "عبد الباسط عبد الصمد", url: "https://server7.mp3quran.net/basit/001.mp3" },
   { id: 4, name: "محمود خليل الحصري", url: "https://server13.mp3quran.net/husr/001.mp3" },
   { id: 5, name: "تكبيرات وذكر", url: "https://stream.radiojar.com/00yp8vy7m4zuv" }
-];
-
-const DAILY_LINES = [
-  "ورتل القرآن ترتيلًا",
-  "ألا بذكر الله تطمئن القلوب",
-  "إن هذا القرآن يهدي للتي هي أقوم",
-  "فاقرؤوا ما تيسر من القرآن"
 ];
 
 const ICONS = {
@@ -39,17 +34,34 @@ const ICONS = {
   chevronUp: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`
 };
 
+function readStorage(key, fallback = null) {
+  try {
+    return localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStorage(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const state = {
   theme: (() => {
-    const stored = localStorage.getItem("atheer_theme");
+    const stored = readStorage("atheer_theme");
     if (stored) return stored;
     return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
   })(),
-  themeManuallySet: !!localStorage.getItem("atheer_theme"),
+  themeManuallySet: !!readStorage("atheer_theme"),
   // A previous release may have saved a tab that no longer exists. Never let
   // persisted browser state leave the content panel without a renderer.
   activeTab: (() => {
-    const savedTab = localStorage.getItem("atheer_last_tab");
+    const savedTab = readStorage("atheer_last_tab");
     return VALID_TABS.has(savedTab) ? savedTab : "home";
   })(),
   radioCategory: "all",
@@ -73,11 +85,10 @@ const state = {
   sleepTimerId: null,
   sleepEndsAt: null,
   repeatOne: false,
-  autoNext: localStorage.getItem("atheer_auto_next") === "true",
+  autoNext: readStorage("atheer_auto_next") === "true",
   playerExpanded: false,
-  deferredInstall: null,
-  volume: Number(localStorage.getItem("atheer_volume")) || 0.8,
-  speed: localStorage.getItem("atheer_speed") || "1",
+  volume: Math.max(0, Math.min(1, Number(readStorage("atheer_volume", "0.8")) || 0)),
+  speed: ["0.75", "1", "1.25", "1.5", "2"].includes(readStorage("atheer_speed", "1")) ? readStorage("atheer_speed", "1") : "1",
   searches: { radios: "", reciters: "", suwar: "", downloads: "" },
   favoritesRadios: readJson("atheer_favorites_radios", []),
   favoritesReciters: readJson("atheer_favorites_reciters", []),
@@ -88,11 +99,12 @@ const state = {
 
 const els = {
   view: document.getElementById("view"),
+  networkStatus: document.getElementById("networkStatus"),
+  networkMessage: document.getElementById("networkMessage"),
   tabs: document.querySelectorAll(".tab"),
   tabIndicator: document.getElementById("tabIndicator"),
   themeToggle: document.getElementById("themeToggle"),
   themeIcon: document.getElementById("themeIcon"),
-  installApp: document.getElementById("installApp"),
   player: document.getElementById("player"),
   audio: document.getElementById("audio"),
   title: document.getElementById("trackTitle"),
@@ -119,16 +131,42 @@ const els = {
   unhidePlayer: document.getElementById("unhidePlayerBtn")
 };
 
+const radioRecovery = new RadioRecovery(els.audio, (status, attempt) => {
+  const messages = {
+    connecting: "جارٍ الاتصال بالبث المباشر…",
+    live: "يبث الآن مباشرة",
+    interrupted: "انقطع الاتصال مؤقتًا؛ ستتم إعادة المحاولة تلقائيًا…",
+    retrying: `جارٍ استعادة البث (المحاولة ${attempt})…`,
+    paused: "البث متوقف مؤقتًا",
+    "interaction-required": "اضغط تشغيل لاستئناف البث"
+  };
+  const label = els.liveRow.querySelector("span");
+  if (label) label.textContent = messages[status] || messages.connecting;
+});
+
+function updateNetworkStatus() {
+  const online = navigator.onLine;
+  els.networkStatus.classList.toggle("hidden", online);
+  els.networkMessage.textContent = "أنت غير متصل. يمكنك تشغيل السور المحفوظة من قسم تنزيلاتي.";
+  if (["radios", "library"].includes(state.activeTab)) render();
+}
+
+function notifyOffline(message) {
+  if (navigator.onLine) return false;
+  els.networkMessage.textContent = message;
+  return true;
+}
+
 function readJson(key, fallback) {
   try {
-    return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback));
+    return JSON.parse(readStorage(key) || JSON.stringify(fallback));
   } catch {
     return fallback;
   }
 }
 
 function writeJson(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
+  writeStorage(key, JSON.stringify(value));
 }
 
 function escapeHtml(value) {
@@ -169,7 +207,7 @@ function setTheme(theme, persist = true) {
   els.themeIcon.innerHTML = theme === "light" ? ICONS.sun : ICONS.moon;
   if (persist) {
     state.themeManuallySet = true;
-    localStorage.setItem("atheer_theme", theme);
+    writeStorage("atheer_theme", theme);
   }
 }
 
@@ -411,7 +449,7 @@ function groupReciters(reciters) {
 
 function render() {
   if (!VALID_TABS.has(state.activeTab)) state.activeTab = "home";
-  localStorage.setItem("atheer_last_tab", state.activeTab);
+  writeStorage("atheer_last_tab", state.activeTab);
   els.tabs.forEach((tab) => {
     const isActive = tab.dataset.tab === state.activeTab;
     tab.classList.toggle("active", isActive);
@@ -459,14 +497,14 @@ function renderHome() {
   const favRadios = state.radios.filter((radio) => state.favoritesRadios.includes(radio.id)).slice(0, 4);
   const recentDownloads = [...state.downloaded].sort((a, b) => (b.downloadedAt || "").localeCompare(a.downloadedAt || "")).slice(0, 4);
   const sizeMb = downloadedSizeMb();
-  const dayLine = DAILY_LINES[new Date().getDate() % DAILY_LINES.length];
 
   setViewHtml(`
     <div class="home-grid">
       <section class="home-hero">
         <div class="home-copy">
-          <span class="badge">جلسة هادئة اليوم</span>
-          <h2>${escapeHtml(dayLine)}</h2>
+          <span class="badge">آية اليوم</span>
+          <h2 class="mushaf-verse" lang="ar" dir="rtl" aria-label="أَوْ زِدْ عَلَيْهِ وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا">ﱏ ﱐ ﱑ ﱒ ﱓ ﱔ ﱕ</h2>
+          <p class="verse-reference">سورة المزمل · الآية ٤</p>
           <p>كل شيء قريب: آخر استماع، إذاعاتك المفضلة، المكتبة الصوتية، والتنزيلات المحفوظة على هذا الجهاز.</p>
           <div class="home-actions">
             ${latest
@@ -585,6 +623,7 @@ function renderRadios() {
 
   setViewHtml(`
     ${sectionHeader("الإذاعات والبث المباشر", `${state.radios.length} إذاعة متاحة`, "radioSearch", "ابحث عن إذاعة أو شيخ...", state.searches.radios)}
+    ${navigator.onLine ? "" : `<div class="offline-callout" role="status">البث المباشر يحتاج إلى اتصال بالإنترنت؛ تنزيلاتك الصوتية متاحة دون اتصال.</div>`}
     <div class="pills">
       ${labels.map(([key, label]) => `<button class="pill ${state.radioCategory === key && !state.onlyFavoriteRadios ? "active" : ""}" data-radio-cat="${key}">${label} <span class="meta">${(state.categorizedRadios[key] || []).length}</span></button>`).join("")}
       <button class="pill ${state.onlyFavoriteRadios ? "active" : ""}" data-fav-radios>المفضلة ${state.favoritesRadios.length}</button>
@@ -610,6 +649,10 @@ function radioCard(radio) {
 
 function renderLibrary() {
   if (!Object.keys(state.groupedRewayat).length) {
+    if (!navigator.onLine) {
+      setViewHtml(`${sectionHeader("المكتبة الصوتية", "بيانات القراء تحتاج اتصالًا بالإنترنت", "", "")}${empty("المكتبة غير متاحة دون اتصال", "يمكنك الاستماع إلى السور التي نزّلتها مسبقًا.", '<button class="cta-button" type="button" data-go-tab="downloads">عرض تنزيلاتي</button>')}`);
+      return;
+    }
     loading("جاري جلب القراء والروايات...");
     Promise.all([fetchReciters(), refreshDownloads()]).then(render).catch(() => {
       setViewHtml(empty("تعذر تحميل المكتبة", "تحقق من الاتصال بالإنترنت ثم أعد المحاولة."));
@@ -665,8 +708,8 @@ function renderLibrary() {
 function reciterCard(reciter) {
   const favorite = state.favoritesReciters.includes(reciter.reciterId);
   return `
-    <article class="card">
-      <div class="clickable" data-open-reciter="${reciter.reciterId}" data-moshaf="${reciter.moshaf.id}">
+    <article class="card clickable" data-open-reciter="${reciter.reciterId}" data-moshaf="${reciter.moshaf.id}">
+      <div>
         <h3>الشيخ ${escapeHtml(reciter.reciterName)}</h3>
         <p>${reciter.moshaf.surah_total === 114 ? "المصحف كامل" : `${reciter.moshaf.surah_total} سورة`}</p>
       </div>
@@ -785,7 +828,6 @@ function renderHistory() {
 }
 
 function renderSettings() {
-  const showInstallBtn = !!deferredInstallPrompt;
   setViewHtml(`
     ${sectionHeader("الإعدادات", "اضبط طريقة الاستماع على هذا الجهاز", "", "")}
     <section class="settings-panel" aria-label="إعدادات التشغيل">
@@ -800,29 +842,7 @@ function renderSettings() {
         </button>
       </div>
     </section>
-    ${showInstallBtn ? `
-    <section class="settings-panel" aria-label="تثبيت التطبيق" style="margin-top: 12px;">
-      <div class="settings-row">
-        <div>
-          <h3>تثبيت التطبيق</h3>
-          <p>أضف أثير القرآن إلى شاشتك الرئيسية للوصول السريع بدون اتصال.</p>
-        </div>
-        <button class="cta-button" type="button" id="installPwaBtn" aria-label="تثبيت التطبيق">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-inline-end:6px"><path d="M12 2v13m0 0l-4-4m4 4l4-4"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
-          تثبيت
-        </button>
-      </div>
-    </section>` : ""}
   `);
-  if (showInstallBtn) {
-    document.getElementById("installPwaBtn")?.addEventListener("click", async () => {
-      if (!deferredInstallPrompt) return;
-      deferredInstallPrompt.prompt();
-      const { outcome } = await deferredInstallPrompt.userChoice;
-      if (outcome === "accepted") deferredInstallPrompt = null;
-      render();
-    });
-  }
 }
 
 function empty(title, text, action = "") {
@@ -854,9 +874,11 @@ function findReciter(reciterId) {
 }
 
 function playRadio(id) {
+  if (notifyOffline("لا يمكن تشغيل البث المباشر دون اتصال بالإنترنت؛ جرّب السور المحفوظة في تنزيلاتي.")) return;
   const radio = state.radios.find((item) => item.id === Number(id));
   if (!radio) return;
   if (state.currentAudio?.url === radio.url && !els.audio.paused) {
+    radioRecovery.pause();
     els.audio.pause();
     return;
   }
@@ -930,10 +952,16 @@ async function playDownloaded(id) {
 }
 
 function playAudio(track) {
+  if (!navigator.onLine && !track.url.startsWith("blob:")) {
+    notifyOffline("هذا الصوت غير محفوظ على الجهاز؛ اتصل بالإنترنت أو اختر سورة من تنزيلاتي.");
+    return;
+  }
+  radioRecovery.stop();
   state.currentAudio = track;
   state.activeTrackKey = track.isRadio ? "" : `${track.reciterId}_${track.surahId}`;
   state.activeDownloadId = track.downloadedId || "";
   els.audio.src = track.url;
+  if (track.isRadio) radioRecovery.start(track.url);
   els.audio.loop = state.repeatOne && !track.isRadio;
   els.audio.playbackRate = Number(els.speed.value);
   els.audio.volume = Number(els.volume.value);
@@ -1079,6 +1107,7 @@ function saveCurrentProgress(force = false) {
 }
 
 async function downloadSurah(surahId, reciterId, moshafId) {
+  if (notifyOffline("تنزيل السور يحتاج إلى اتصال بالإنترنت.")) return;
   const reciter = currentLibraryReciter(reciterId, moshafId);
   const surah = SUWAR.find((item) => item.id === Number(surahId));
   const group = state.groupedRewayat[state.selectedRewayahKey];
@@ -1174,6 +1203,7 @@ function setSleepTimer(minutes) {
   if (!minutes) return;
   state.sleepEndsAt = Date.now() + minutes * 60 * 1000;
   state.sleepTimerId = setTimeout(() => {
+    radioRecovery.pause();
     els.audio.pause();
     els.sleep.value = "0";
     state.sleepEndsAt = null;
@@ -1199,7 +1229,7 @@ document.addEventListener("click", async (event) => {
     renderRadios();
   } else if (target.hasAttribute("data-auto-next")) {
     state.autoNext = !state.autoNext;
-    localStorage.setItem("atheer_auto_next", String(state.autoNext));
+    writeStorage("atheer_auto_next", String(state.autoNext));
     target.classList.toggle("active", state.autoNext);
     target.setAttribute("aria-checked", String(state.autoNext));
     const label = target.querySelector(".sr-only");
@@ -1284,13 +1314,17 @@ document.addEventListener("input", (event) => {
 els.themeToggle.addEventListener("click", () => setTheme(state.theme === "dark" ? "light" : "dark"));
 els.playPause.addEventListener("click", () => {
   if (!state.currentAudio) return;
-  if (els.audio.paused) els.audio.play();
-  else {
+  if (els.audio.paused) {
+    radioRecovery.resume();
+    els.audio.play().catch(() => updatePlayer());
+  } else {
+    radioRecovery.pause();
     els.audio.pause();
     saveCurrentProgress(true);
   }
 });
 function exitPlayer() {
+  radioRecovery.stop();
   els.audio.pause();
   els.audio.removeAttribute("src");
   if (state.activeBlobUrl) URL.revokeObjectURL(state.activeBlobUrl);
@@ -1330,11 +1364,11 @@ els.seek.addEventListener("input", () => {
 });
 els.speed.addEventListener("change", () => {
   els.audio.playbackRate = Number(els.speed.value);
-  localStorage.setItem("atheer_speed", els.speed.value);
+  writeStorage("atheer_speed", els.speed.value);
 });
 els.volume.addEventListener("input", () => {
   els.audio.volume = Number(els.volume.value);
-  localStorage.setItem("atheer_volume", els.volume.value);
+  writeStorage("atheer_volume", els.volume.value);
 });
 els.audio.addEventListener("play", updatePlayer);
 els.audio.addEventListener("pause", () => {
@@ -1372,31 +1406,14 @@ els.audio.addEventListener("ended", () => {
   else updatePlayer();
 });
 
-window.addEventListener("beforeinstallprompt", (event) => {
-  event.preventDefault();
-  deferredInstallPrompt = event;
-  state.deferredInstall = event;
-  els.installApp.classList.remove("hidden");
-  // Re-render settings if that tab is active so the install button appears
-  if (state.activeTab === "settings") render();
-});
-els.installApp.addEventListener("click", async () => {
-  if (!state.deferredInstall) return;
-  state.deferredInstall.prompt();
-  const { outcome } = await state.deferredInstall.userChoice;
-  if (outcome === "accepted") {
-    deferredInstallPrompt = null;
-    state.deferredInstall = null;
-    els.installApp.classList.add("hidden");
-    if (state.activeTab === "settings") render();
-  }
-});
-
 if ("serviceWorker" in navigator && import.meta.env?.PROD) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   });
 }
+
+window.addEventListener("online", updateNetworkStatus);
+window.addEventListener("offline", updateNetworkStatus);
 
 setTheme(state.theme, false);
 els.volume.value = state.volume;
@@ -1415,6 +1432,7 @@ try {
   console.error("[أثير] initial render error:", err);
   setViewHtml(empty("حدث خطأ في العرض", "يرجى إعادة تحميل الصفحة."));
 }
+updateNetworkStatus();
 refreshDownloads().catch(() => {}).finally(() => {
   render();
   Promise.allSettled([fetchRadios(), fetchReciters()]).then(() => {

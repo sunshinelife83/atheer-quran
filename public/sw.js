@@ -1,22 +1,39 @@
-const CACHE_NAME = "atheer-quran-v7";
-const APP_SHELL = [
-  "./",
-  "./index.html",
-  "./styles.css",
-  "./app.js",
-  "./manifest.webmanifest",
-  "./icon.svg"
-];
+const CACHE_PREFIX = "atheer-quran-";
+const CACHE_NAME = `${CACHE_PREFIX}v9`;
+const SCOPE_URL = new URL(self.registration.scope);
+const INDEX_URL = new URL("index.html", SCOPE_URL).href;
+
+function getAppShellUrls(html) {
+  const urls = new Set([SCOPE_URL.href, INDEX_URL]);
+  const assetAttributes = /\b(?:src|href)\s*=\s*["']([^"'#]+)["']/gi;
+  for (const match of html.matchAll(assetAttributes)) {
+    try {
+      const url = new URL(match[1], INDEX_URL);
+      if (url.origin === SCOPE_URL.origin && url.pathname.startsWith(SCOPE_URL.pathname)) {
+        urls.add(url.href);
+      }
+    } catch {
+      // Ignore malformed and non-URL asset references.
+    }
+  }
+  return [...urls];
+}
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
+  event.waitUntil((async () => {
+    const response = await fetch(INDEX_URL, { cache: "reload" });
+    if (!response.ok) throw new Error(`App shell request failed: ${response.status}`);
+    const urls = getAppShellUrls(await response.text());
+    const cache = await caches.open(CACHE_NAME);
+    await cache.addAll(urls);
+  })());
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+      Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME).map((key) => caches.delete(key)))
     )
   );
   self.clients.claim();
@@ -26,27 +43,26 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
 
-  // HTML and modules must stay in sync after an update. Prefer the network for
-  // navigations and first-party assets, then fall back to the last working
-  // shell when the device is offline.
-  const isAppRequest = new URL(request.url).origin === location.origin;
-  if (request.mode === "navigate" || isAppRequest) {
-    event.respondWith(
-      fetch(request).then((response) => {
-        if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-        }
-        return response;
-      }).catch(() => caches.match(request).then((cached) => cached || caches.match("./index.html")))
-    );
-    return;
-  }
+  // Only intercept same-origin application files. External APIs and audio
+  // streams (including radio) always go directly to the network and are never
+  // written to Cache Storage by this service worker.
+  if (new URL(request.url).origin !== location.origin || request.destination === "audio") return;
 
+  // First-party application files prefer the network and fall back to the last
+  // working shell when the device is offline.
   event.respondWith(
-    caches.match(request).then((cached) => {
+    fetch(request).then((response) => {
+      if (response.ok) {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone)).catch(() => {});
+      }
+      return response;
+    }).catch(async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(request);
       if (cached) return cached;
-      return fetch(request);
-    }).catch(() => caches.match("./index.html"))
+      if (request.mode === "navigate") return cache.match(INDEX_URL);
+      return new Response("Offline", { status: 504, statusText: "Offline" });
+    })
   );
 });
