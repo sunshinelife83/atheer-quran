@@ -1,6 +1,7 @@
 import { RadioRecovery } from "./src/audio/radio-recovery.js";
+import { normalizeRadios } from "./src/audio/radio-url.js";
 
-const API = "https://mp3quran.net/api/v3";
+const API = "/api/v3";
 const VALID_TABS = new Set(["home", "radios", "library", "downloads", "history", "settings"]);
 
 const SURAH_NAMES = [
@@ -350,15 +351,16 @@ function loading(text) {
 }
 
 async function fetchRadios() {
-  const cached = readJson("atheer_cached_radios", []);
+  const cached = normalizeRadios(readJson("atheer_cached_radios", []));
   if (cached.length) {
     state.radios = cached;
     state.categorizedRadios = categorizeRadios(cached);
+    writeJson("atheer_cached_radios", cached);
     fetch(`${API}/radios?language=ar`).then((r) => r.json()).then((data) => {
       if (Array.isArray(data.radios)) {
-        state.radios = data.radios;
-        state.categorizedRadios = categorizeRadios(data.radios);
-        writeJson("atheer_cached_radios", data.radios);
+        state.radios = normalizeRadios(data.radios);
+        state.categorizedRadios = categorizeRadios(state.radios);
+        writeJson("atheer_cached_radios", state.radios);
         if (state.activeTab === "radios" || state.activeTab === "home") render();
       }
     }).catch(() => {});
@@ -368,7 +370,7 @@ async function fetchRadios() {
   try {
     const res = await fetch(`${API}/radios?language=ar`);
     const data = await res.json();
-    state.radios = Array.isArray(data.radios) ? data.radios : FALLBACK_RADIOS;
+    state.radios = normalizeRadios(Array.isArray(data.radios) ? data.radios : FALLBACK_RADIOS);
   } catch {
     state.radios = FALLBACK_RADIOS;
   }

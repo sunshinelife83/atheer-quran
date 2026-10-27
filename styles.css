@@ -81,6 +81,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 
 .shell { width: min(1180px, calc(100% - 40px)); margin-inline: auto; }
 .main { padding: 28px 0 48px; }
+.seo-home-directory { display: flex; min-height: 230px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 32px 20px; color: var(--ink-muted); text-align: center; }
+.seo-home-directory h2 { color: var(--ink); font-size: clamp(1.35rem, 3vw, 1.8rem); }
+.seo-home-directory a { color: var(--accent-strong); font-size: 1rem; font-weight: 700; }
+.seo-home-directory a:hover { color: var(--accent); }
 .gold { color: var(--brass); }
 .gold-text, .gold-line { color: var(--brass); background: none; filter: none; }
 .hidden { display: none !important; }
