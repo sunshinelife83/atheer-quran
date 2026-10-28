@@ -37,7 +37,7 @@ export function renderPage({ title, description, canonical, content, schema, sta
 ${canonicalTags}<meta property="og:type" content="${ogType}"><meta property="og:locale" content="ar_AR"><meta property="og:site_name" content="أثير القرآن">
 <meta property="og:title" content="${escapeHtml(title)}"><meta property="og:description" content="${escapeHtml(description)}">
 <meta name="twitter:card" content="summary"><meta name="twitter:title" content="${escapeHtml(title)}"><meta name="twitter:description" content="${escapeHtml(description)}">
-<link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/seo.css">
+<link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png"><link rel="icon" type="image/png" sizes="512x512" href="/favicon-512.png"><link rel="shortcut icon" type="image/x-icon" href="/favicon.ico"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"><link rel="stylesheet" href="/seo.css">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
 ${structured}

@@ -8,6 +8,7 @@ const API_BASE = "https://www.mp3quran.net/api/v3";
 const SURAH_INFO_URL = "https://api.alquran.cloud/v1/surah";
 const API_ENDPOINTS = new Set(["radios", "reciters", "suwar"]);
 const CACHE_SECONDS = 3600;
+const HTML_CACHE_VERSION = "seo-assets-v2";
 const BROWSER_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=86400";
 const EDGE_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400";
 
@@ -144,7 +145,7 @@ function homepageHead(html, origin, homeLinks) {
   const website = jsonLd({ "@context": "https://schema.org", "@type": "WebSite", name: "أثير القرآن", alternateName: "Athir Al-Quran", url: canonical, inLanguage: "ar" });
   const webpage = jsonLd({ "@context": "https://schema.org", "@type": "WebPage", name: title, description, url: canonical, inLanguage: "ar" });
   head += `${tags}<script type="application/ld+json">${website}</script><script type="application/ld+json">${webpage}</script>`;
-  let output = html.replace(/<head>[\s\S]*?<\/head>/i, `<head>${head}</head>`);
+  let output = html.replace(/<head>[\s\S]*?<\/head>/i, () => `<head>${head}</head>`);
   output = output.replace(/<!-- SEO_DIRECTORY -->[\s\S]*?<!-- SEO_DIRECTORY_END -->/, `<section id="seo-home-directory" class="shell seo-home-directory" aria-label="روابط المحتوى العام">${homeLinks}</section>`);
   return new Response(output, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": BROWSER_CACHE_CONTROL, "cdn-cache-control": EDGE_CACHE_CONTROL, "x-content-type-options": "nosniff" } });
 }
@@ -200,7 +201,7 @@ async function reciterPage(request, env, pathPart) {
   const reciter = resolveById(pathPart, reciters);
   if (!reciter) return htmlError(request, env, 404, "القارئ غير موجود", "لم نعثر على قارئ بهذا العنوان.");
   const canonical = `${origin}${reciterPath(reciter)}`;
-  if (pathPart !== reciterSlug(reciter)) return Response.redirect(canonical, 301);
+  if (pathPart !== reciterSlug(reciter) || new URL(request.url).pathname !== new URL(canonical).pathname) return Response.redirect(canonical, 301);
 
   const editions = (reciter.moshaf || []).map((moshaf) => {
     const available = surahs.filter((surah) => isAvailable(moshaf, surah.id));
@@ -220,7 +221,7 @@ async function radioPage(request, env, pathPart) {
   const radio = resolveById(pathPart, radios);
   if (!radio) return htmlError(request, env, 404, "الإذاعة غير موجودة", "لم نعثر على إذاعة بهذا العنوان.");
   const canonical = `${origin}${radioPath(radio)}`;
-  if (pathPart !== radioSlug(radio)) return Response.redirect(canonical, 301);
+  if (pathPart !== radioSlug(radio) || new URL(request.url).pathname !== new URL(canonical).pathname) return Response.redirect(canonical, 301);
   const duplicateName = radios.filter((item) => item.name === radio.name).length > 1;
   const disambiguator = duplicateName ? ` (رقم ${radio.id})` : "";
   const description = `استمع إلى ${radio.name}${disambiguator} مباشرةً من مصدر البث. يعمل الصوت مباشرةً من مزود الإذاعة، دون تمريره عبر خادم أثير القرآن.`;
@@ -290,12 +291,13 @@ async function homepage(request, env) {
 export default {
   async fetch(request, env, context) {
     const url = new URL(request.url);
+    if (url.pathname === "/index.html") return Response.redirect(new URL("/", request.url), 301);
     if (url.pathname.startsWith("/api/")) return handleApi(request, context);
     if (url.pathname === "/robots.txt") return robots(request, env);
     if (url.pathname === "/sitemap.xml") return cachedPublic(request, context, () => sitemap(request, env), { cacheSafe: !url.search });
-    if (url.pathname === "/") return cachedPublic(request, context, () => homepage(request, env), { cacheSafe: !url.search, version: "clean-directory-v1" });
+    if (url.pathname === "/") return cachedPublic(request, context, () => homepage(request, env), { cacheSafe: !url.search, version: HTML_CACHE_VERSION });
     if (url.pathname === "/browse") return Response.redirect(new URL("/browse/", request.url), 301);
-    if (url.pathname === "/browse/") return cachedPublic(request, context, () => browsePage(request, env), { cacheSafe: !url.search });
+    if (url.pathname === "/browse/") return cachedPublic(request, context, () => browsePage(request, env), { cacheSafe: !url.search, version: HTML_CACHE_VERSION });
     const match = url.pathname.match(/^\/(surah|reciter|radio)\/([^/]+)\/?$/);
     if (match) {
       return cachedPublic(request, context, async () => {
@@ -306,7 +308,7 @@ export default {
         } catch {
           return htmlError(request, env, 502, "تعذر تحميل بيانات المحتوى", "مصدر البيانات الخارجي غير متاح مؤقتًا. حاول مرة أخرى لاحقًا.");
         }
-      }, { cacheSafe: !url.search });
+      }, { cacheSafe: !url.search, version: HTML_CACHE_VERSION });
     }
     if (/\.[a-z0-9]{1,10}$/i.test(url.pathname)) return env.ASSETS.fetch(request);
     return htmlError(request, env, 404, "الصفحة غير موجودة", "هذا العنوان لا يشير إلى صفحة عامة في أثير القرآن.");

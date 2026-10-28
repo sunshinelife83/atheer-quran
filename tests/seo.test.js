@@ -15,7 +15,7 @@ const reciters = [{
 const radios = [{ id: 8, name: "إذاعة تجريبية", url: "https://stream.example/live" }];
 const env = {
   SITE_URL: "https://site.example",
-  ASSETS: { fetch: async () => new Response(`<!doctype html><html lang="ar" dir="rtl"><head><title>old</title><meta name="description" content="old"><link rel="icon" href="/icon.svg" type="image/svg+xml"></head><body><main></main><!-- SEO_DIRECTORY --><section>old directory</section><!-- SEO_DIRECTORY_END --><script type="module" src="/assets/main.js"></script></body></html>`, { headers: { "content-type": "text/html" } }) }
+  ASSETS: { fetch: async () => new Response(`<!doctype html><html lang="ar" dir="rtl"><head><title>old</title><meta name="description" content="old"><link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png"></head><body><main></main><!-- SEO_DIRECTORY --><section>old directory</section><!-- SEO_DIRECTORY_END --><script type="module" src="/assets/main.js"></script></body></html>`, { headers: { "content-type": "text/html" } }) }
 };
 
 function fixtureFetch(url) {
@@ -37,7 +37,7 @@ function canonicalCount(html) {
 }
 
 function assertBrandMetadata(html) {
-  assert.match(html, /<link rel="icon" href="\/icon\.svg" type="image\/svg\+xml">/);
+  assert.match(html, /<link rel="icon" type="image\/png" sizes="96x96" href="\/favicon-96\.png">/);
   assert.match(html, /<meta property="og:site_name" content="أثير القرآن">/);
   assert.doesNotMatch(html, /Cloudflare/);
 }

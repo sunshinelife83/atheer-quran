@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "atheer-quran-";
-const CACHE_NAME = `${CACHE_PREFIX}v9`;
+const CACHE_NAME = `${CACHE_PREFIX}v10`;
 const SCOPE_URL = new URL(self.registration.scope);
 const INDEX_URL = new URL("index.html", SCOPE_URL).href;
 
@@ -43,10 +43,15 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
 
-  // Only intercept same-origin application files. External APIs and audio
-  // streams (including radio) always go directly to the network and are never
-  // written to Cache Storage by this service worker.
-  if (new URL(request.url).origin !== location.origin || request.destination === "audio") return;
+  // Only intercept same-origin application files. SEO routes, metadata APIs,
+  // and audio streams go directly to the network and are never cached here.
+  const url = new URL(request.url);
+  if (url.origin !== location.origin || request.destination === "audio") return;
+  if (
+    url.pathname === "/robots.txt" ||
+    url.pathname === "/sitemap.xml" ||
+    /^\/(?:api|browse|surah|reciter|radio)(?:\/|$)/.test(url.pathname)
+  ) return;
 
   // First-party application files prefer the network and fall back to the last
   // working shell when the device is offline.

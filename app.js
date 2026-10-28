@@ -983,12 +983,21 @@ function playAudio(track) {
   }
 }
 
-function playAdjacent(direction) {
+async function playAdjacent(direction) {
   const track = state.currentAudio;
   if (!track || track.isRadio || !track.surahId || !track.serverUrl) return;
   const nextId = track.surahId + direction;
   if (nextId < 1 || nextId > 114) return;
   if (track.surahList && !track.surahList.includes(nextId)) return;
+  const downloaded = state.downloaded.find((item) =>
+    Number(item.reciterId) === Number(track.reciterId) &&
+    Number(item.surahId) === Number(nextId) &&
+    (!track.riwayahName || item.riwayahName === track.riwayahName)
+  );
+  if (downloaded) {
+    await playDownloaded(downloaded.id);
+    return;
+  }
   playAudio({
     ...track,
     url: streamUrl(track.serverUrl, nextId),
@@ -1086,13 +1095,20 @@ els.view.addEventListener("viewcommit", () => {
   syncHomeResumeControls();
 });
 
+let lastProgressSaveAt = 0;
+let lastProgressSaveKey = "";
+
 function saveCurrentProgress(force = false) {
   const track = state.currentAudio;
   if (!track || track.isRadio || !track.reciterId || !track.surahId) return;
   const duration = Math.round(els.audio.duration || 0);
   const timestamp = Math.round(els.audio.currentTime || 0);
-  if (!force && timestamp % 5 !== 0) return;
-  state.progress[`${track.reciterId}_${track.surahId}`] = {
+  const key = `${track.reciterId}_${track.surahId}`;
+  const now = Date.now();
+  if (!force && key === lastProgressSaveKey && now - lastProgressSaveAt < 5000) return;
+  lastProgressSaveKey = key;
+  lastProgressSaveAt = now;
+  state.progress[key] = {
     surahId: track.surahId,
     surahName: track.title,
     reciterId: track.reciterId,
