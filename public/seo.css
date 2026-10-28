@@ -1,4 +1,6 @@
 /* Compact no-JS public-page shell; colors and type follow styles.css. */
+@font-face{font-family:"Tajawal";src:url("/fonts/tajawal-arabic-400.woff2") format("woff2");font-style:normal;font-weight:400;font-display:swap}
+@font-face{font-family:"Tajawal";src:url("/fonts/tajawal-arabic-700.woff2") format("woff2");font-style:normal;font-weight:700;font-display:swap}
 body.seo-document{--bg:#101817;--bg-raised:#171f1e;--surface:#1d2725;--surface-hover:#25312f;--ink:#eef1ef;--ink-muted:#b8c2be;--line:#45514c;--accent:#76c5a7;--accent-strong:#8bd2b2;--brass:#d3b77e;--radius-md:12px}
 *,*::before,*::after{box-sizing:border-box}
 html{font-size:16px;scroll-behavior:smooth;-webkit-text-size-adjust:100%}

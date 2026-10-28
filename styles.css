@@ -165,12 +165,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   font-weight: 700;
   font-display: swap;
 }
+/* Subset to the seven private-use glyphs in the fixed homepage verse in app.js. */
 @font-face {
   font-family: "QPC V2 Page 574";
   src: url("/fonts/qpc-v2-page-574.woff2") format("woff2");
   font-style: normal;
   font-weight: 400;
   font-display: swap;
+  unicode-range: U+FC4F-FC55;
 }
 .home-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(300px, .8fr); gap: 20px; }
 .home-hero, .panel, .card, .empty {

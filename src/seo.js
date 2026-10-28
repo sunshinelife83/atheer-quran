@@ -37,9 +37,7 @@ export function renderPage({ title, description, canonical, content, schema, sta
 ${canonicalTags}<meta property="og:type" content="${ogType}"><meta property="og:locale" content="ar_AR"><meta property="og:site_name" content="أثير القرآن">
 <meta property="og:title" content="${escapeHtml(title)}"><meta property="og:description" content="${escapeHtml(description)}">
 <meta name="twitter:card" content="summary"><meta name="twitter:title" content="${escapeHtml(title)}"><meta name="twitter:description" content="${escapeHtml(description)}">
-<link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png"><link rel="icon" type="image/png" sizes="512x512" href="/favicon-512.png"><link rel="shortcut icon" type="image/x-icon" href="/favicon.ico"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"><link rel="stylesheet" href="/seo.css">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png"><link rel="icon" type="image/png" sizes="512x512" href="/favicon-512.png"><link rel="shortcut icon" type="image/x-icon" href="/favicon.ico"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"><link rel="preload" href="/fonts/tajawal-arabic-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="/fonts/tajawal-arabic-700.woff2" as="font" type="font/woff2" crossorigin><link rel="stylesheet" href="/seo.css">
 ${structured}
 </head><body class="seo-document">
 <header class="topbar"><div class="shell nav-inner"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">۞</span><span class="brand-copy"><span class="brand-title">أثير القرآن</span><span class="brand-tagline">استمع، واحفظ، واستكمل من حيث توقفت</span></span></a><nav aria-label="روابط الموقع"><a class="tab" href="/browse/">فهرس السور والقراء والإذاعات</a></nav></div></header>
