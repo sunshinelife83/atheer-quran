@@ -282,7 +282,8 @@ async function handleApi(request, context) {
 async function homepage(request, env) {
   const origin = siteOrigin(request, env);
   if (!origin) return htmlError(request, env, 503, "الإعداد غير مكتمل", "يجب ضبط SITE_URL على نطاق الإنتاج قبل توليد canonical.");
-  const response = await env.ASSETS.fetch(request);
+  const assetRequest = new Request(new URL("/index.html", request.url), request);
+  const response = await env.ASSETS.fetch(assetRequest);
   if (!response.ok) return response;
   const homeLinks = `<nav class="seo-home-links" aria-label="روابط المحتوى العام"><h2>استمع إلى القرآن الكريم كما تحب</h2><p>يجمع أثير القرآن إذاعات قرآنية مباشرة، وتلاوات السور بصوت القراء، مع إمكانية حفظ السور للاستماع دون اتصال.</p><a href="/browse/">تصفح سور القرآن الكريم والقراء والإذاعات</a></nav>`;
   return homepageHead(await response.text(), origin, homeLinks);
