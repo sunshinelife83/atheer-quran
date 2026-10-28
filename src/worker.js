@@ -9,7 +9,7 @@ const SURAH_INFO_URL = "https://api.alquran.cloud/v1/surah";
 const API_ENDPOINTS = new Set(["radios", "reciters", "suwar"]);
 const CACHE_SECONDS = 3600;
 const HTML_CACHE_VERSION = "seo-assets-v2";
-const HOMEPAGE_CACHE_VERSION = "seo-home-links-v2";
+const HOMEPAGE_CACHE_VERSION = "seo-home-links-v3";
 const BROWSER_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=86400";
 const EDGE_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400";
 
