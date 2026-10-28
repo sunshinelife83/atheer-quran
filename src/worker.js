@@ -9,6 +9,7 @@ const SURAH_INFO_URL = "https://api.alquran.cloud/v1/surah";
 const API_ENDPOINTS = new Set(["radios", "reciters", "suwar"]);
 const CACHE_SECONDS = 3600;
 const HTML_CACHE_VERSION = "seo-assets-v2";
+const HOMEPAGE_CACHE_VERSION = "seo-home-links-v1";
 const BROWSER_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=86400";
 const EDGE_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400";
 
@@ -285,7 +286,7 @@ async function homepage(request, env) {
   const assetRequest = new Request(new URL("/index.html", request.url), request);
   const response = await env.ASSETS.fetch(assetRequest);
   if (!response.ok) return response;
-  const homeLinks = `<nav class="seo-home-links" aria-label="روابط المحتوى العام"><h2>استمع إلى القرآن الكريم كما تحب</h2><p>يجمع أثير القرآن إذاعات قرآنية مباشرة، وتلاوات السور بصوت القراء، مع إمكانية حفظ السور للاستماع دون اتصال.</p><a href="/browse/">تصفح سور القرآن الكريم والقراء والإذاعات</a></nav>`;
+  const homeLinks = `<nav class="seo-home-links" aria-label="روابط المحتوى العام"><h2>استمع إلى القرآن الكريم كما تحب</h2><p>يجمع أثير القرآن إذاعات قرآنية مباشرة، وتلاوات السور بصوت القراء، مع إمكانية حفظ السور للاستماع دون اتصال.</p><p><strong>سور مختارة:</strong> <a href="/surah/001-alfathh">سورة الفاتحة</a> · <a href="/surah/002-albqrh">سورة البقرة</a> · <a href="/surah/036-ys">سورة يس</a></p><p><strong>قراء:</strong> <a href="/reciter/102-mahr-almyqly">ماهر المعيقلي</a> · <a href="/reciter/123-mshary-alfasy">مشاري العفاسي</a> · <a href="/reciter/135-bdalrhmn-alswyd">عبدالرحمن السديس</a></p><p><strong>إذاعات مباشرة:</strong> <a href="/radio/2-shykh-abw-bkr-alshatry">أبو بكر الشاطري</a> · <a href="/radio/3-ahmd-aljmy">أحمد العجمي</a> · <a href="/radio/17-sd-alghamdy">سعد الغامدي</a></p><a href="/browse/">تصفح الفهرس الكامل للسور والقراء والإذاعات</a></nav>`;
   return homepageHead(await response.text(), origin, homeLinks);
 }
 
@@ -296,7 +297,7 @@ export default {
     if (url.pathname.startsWith("/api/")) return handleApi(request, context);
     if (url.pathname === "/robots.txt") return robots(request, env);
     if (url.pathname === "/sitemap.xml") return cachedPublic(request, context, () => sitemap(request, env), { cacheSafe: !url.search });
-    if (url.pathname === "/") return cachedPublic(request, context, () => homepage(request, env), { cacheSafe: !url.search, version: HTML_CACHE_VERSION });
+    if (url.pathname === "/") return cachedPublic(request, context, () => homepage(request, env), { cacheSafe: !url.search, version: HOMEPAGE_CACHE_VERSION });
     if (url.pathname === "/browse") return Response.redirect(new URL("/browse/", request.url), 301);
     if (url.pathname === "/browse/") return cachedPublic(request, context, () => browsePage(request, env), { cacheSafe: !url.search, version: HTML_CACHE_VERSION });
     const match = url.pathname.match(/^\/(surah|reciter|radio)\/([^/]+)\/?$/);
