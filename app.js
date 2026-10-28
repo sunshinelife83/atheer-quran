@@ -21,8 +21,8 @@ const CURATED_RADIOS = [
   { id: 900001, name: "إذاعة القرآن الكريم من الجزائر", country: "الجزائر", url: "https://webradio1.tda.dz:8001/Coran_64K.mp3", sourceUrl: "https://radioalgerie.dz/player/fr/content/radio-coran" },
   { id: 900002, name: "إذاعة الزيتونة للقرآن الكريم", country: "تونس", url: "https://radio.radiotunisienne.tn/radiozaitouna", sourceUrl: "https://www.radiozaitouna.tn/" },
   { id: 900003, name: "إذاعة القرآن الكريم من نابلس", country: "فلسطين", url: "https://quran-radio.org:8899/;?type=http&nocache=29", sourceUrl: "https://quran-radio.com/" },
-  { id: 900004, name: "إذاعة القرآن الكريم من القاهرة", country: "مصر", externalUrl: "https://misrquran.gov.eg/", externalLabel: "الموقع الرسمي" },
-  { id: 900005, name: "إذاعة وقناة القرآن الكريم من الشارقة", country: "الإمارات", externalUrl: "https://www.youtube.com/@shjquran/live", externalLabel: "شاهد البث", mediaType: "video" },
+  { id: 900004, name: "إذاعة القرآن الكريم من القاهرة", country: "مصر", url: "https://stream.radiojar.com/8s5u5tpdtwzuv", sourceUrl: "https://misrquran.gov.eg/" },
+  { id: 900005, name: "إذاعة القرآن الكريم من الشارقة", country: "الإمارات", url: "https://l3.itworkscdn.net/smcquranlive/quranradiolive/icecast.audio", sourceUrl: "https://t.me/shjquran" },
   { id: 900006, name: "قناة القرآن الكريم من مكة المكرمة", group: "haramain", externalUrl: "https://www.youtube.com/@saudiqurantv/live", externalLabel: "شاهد البث", mediaType: "video" },
   { id: 900007, name: "قناة السنة النبوية من المدينة المنورة", group: "haramain", externalUrl: "https://www.youtube.com/user/SaudiSunnahTv/live", externalLabel: "شاهد البث", mediaType: "video" }
 ];
@@ -371,7 +371,8 @@ async function fetchRadios() {
         state.radios = mergeRadioSources(normalizeRadios(data.radios));
         state.categorizedRadios = categorizeRadios(state.radios);
         writeJson("atheer_cached_radios", state.radios);
-        if (state.activeTab === "radios" || state.activeTab === "home") render();
+        if (state.activeTab === "radios") render();
+        else if (state.activeTab === "home") refreshHomeRadioFavorites();
       }
     }).catch(() => {});
     return;
@@ -414,7 +415,7 @@ async function fetchReciters() {
         state.reciters = sorted;
         state.groupedRewayat = groupReciters(sorted);
         writeJson("atheer_cached_reciters", sorted);
-        if (state.activeTab === "library" || state.activeTab === "home") render();
+        if (state.activeTab === "library") render();
       }
     }).catch(() => {});
     return;
@@ -557,7 +558,7 @@ function renderHome() {
           ${latest
             ? miniItem(latest.surahName, `${latest.reciterName} · ${formatTime(latest.timestamp)} من ${formatTime(latest.duration)}`, "data-resume-latest")
             : miniItem("لا يوجد استماع محفوظ", "سيظهر هنا آخر موضع توقفت عنده", "data-go-tab=\"radios\"")}
-          ${miniItem("التنزيلات", `${state.downloaded.length} ملف · ${sizeMb.toFixed(1)} MB`, "data-go-tab=\"downloads\"")}
+          ${miniItem("التنزيلات", `${state.downloaded.length} ملف · ${sizeMb.toFixed(1)} MB`, "data-go-tab=\"downloads\" data-home-download-summary")}
           ${miniItem("المفضلة", `${state.favoritesRadios.length} إذاعة · ${state.favoritesReciters.length} قارئ`, "data-go-tab=\"radios\"")}
         </div>
       </aside>
@@ -585,7 +586,7 @@ function renderHome() {
     </div>
 
     <div class="home-grid" style="margin-top:20px">
-      <section class="panel">
+      <section class="panel" data-home-radio-favorites>
         <h3>إذاعات مفضلة</h3>
         <div class="mini-list">
           ${favRadios.length
@@ -593,7 +594,7 @@ function renderHome() {
             : miniItem("لا توجد إذاعات مفضلة", "اضغط النجمة في بطاقات الراديو", "data-go-tab=\"radios\"")}
         </div>
       </section>
-      <section class="panel">
+      <section class="panel" data-home-recent-downloads>
         <h3>آخر التنزيلات</h3>
         <div class="mini-list">
           ${recentDownloads.length
@@ -603,6 +604,29 @@ function renderHome() {
       </section>
     </div>
   `);
+}
+
+function refreshHomeRadioFavorites() {
+  const list = els.view.querySelector("[data-home-radio-favorites] .mini-list");
+  if (!list) return;
+  const favRadios = state.radios.filter((radio) => state.favoritesRadios.includes(radio.id)).slice(0, 4);
+  list.innerHTML = favRadios.length
+    ? favRadios.map((radio) => miniItem(radio.name, "بث مباشر", `data-play-radio="${radio.id}"`)).join("")
+    : miniItem("لا توجد إذاعات مفضلة", "اضغط النجمة في بطاقات الراديو", "data-go-tab=\"radios\"");
+}
+
+function refreshHomeDownloads() {
+  const summary = els.view.querySelector("[data-home-download-summary]");
+  if (summary) {
+    summary.outerHTML = miniItem("التنزيلات", `${state.downloaded.length} ملف · ${downloadedSizeMb().toFixed(1)} MB`, "data-go-tab=\"downloads\" data-home-download-summary").trim();
+  }
+
+  const list = els.view.querySelector("[data-home-recent-downloads] .mini-list");
+  if (!list) return;
+  const recentDownloads = [...state.downloaded].sort((a, b) => (b.downloadedAt || "").localeCompare(a.downloadedAt || "")).slice(0, 4);
+  list.innerHTML = recentDownloads.length
+    ? recentDownloads.map((track) => miniItem(track.surahName, track.reciterName, `data-play-download="${track.id}"`)).join("")
+    : miniItem("لا توجد تنزيلات", "احفظ السور من المكتبة للاستماع دون اتصال", "data-go-tab=\"library\"");
 }
 
 function stat(label, value) {
@@ -696,18 +720,20 @@ function radioCard(radio) {
   const playing = state.currentAudio?.isRadio && state.currentAudio.url === radio.url && !els.audio.paused;
   const favorite = state.favoritesRadios.includes(radio.id);
   const external = Boolean(radio.externalUrl);
+  const featured = Boolean(radio.country || radio.group === "haramain");
   const playAction = external
     ? `<a class="radio-source-link" href="${escapeHtml(radio.externalUrl)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(radio.externalLabel || "افتح المصدر الرسمي")}" title="${escapeHtml(radio.externalLabel || "افتح المصدر الرسمي")}"><span>${escapeHtml(radio.externalLabel || "المصدر الرسمي")}</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a>`
     : `<button class="play-button ${playing ? "active" : ""}" data-play-radio="${radio.id}" title="تشغيل" aria-label="تشغيل ${escapeHtml(radio.name)}">${playing ? ICONS.pause : ICONS.play}</button>`;
+  const favoriteButton = `<button class="download-button ${favorite ? "saved" : ""}" data-fav-radio="${radio.id}" title="المفضلة" aria-label="إضافة ${escapeHtml(radio.name)} إلى المفضلة">${favorite ? ICONS.starFilled : ICONS.starEmpty}</button>`;
   const badgeText = playing ? "قيد التشغيل" : (radio.mediaType === "video" ? "بث مرئي رسمي" : "بث مباشر");
   return `
-    <article class="card ${playing ? "playing" : ""}">
-      ${playAction}
-      <div>
+    <article class="card ${playing ? "playing" : ""} ${featured ? "radio-card-featured" : ""}">
+      ${featured ? "" : playAction}
+      <div class="radio-card-copy">
         <h3>${escapeHtml(radio.name)}</h3>
         <span class="live-badge"><i class="live-dot"></i>${badgeText}</span>${radio.country ? `<span class="radio-country-label">${escapeHtml(radio.country)}</span>` : ""}
       </div>
-      <button class="download-button ${favorite ? "saved" : ""}" data-fav-radio="${radio.id}" title="المفضلة">${favorite ? ICONS.starFilled : ICONS.starEmpty}</button>
+      ${featured ? `<div class="radio-card-actions">${playAction}${favoriteButton}</div>` : favoriteButton}
     </article>
   `;
 }
@@ -1519,8 +1545,10 @@ try {
 }
 updateNetworkStatus();
 refreshDownloads().catch(() => {}).finally(() => {
-  render();
+  if (state.activeTab === "home") refreshHomeDownloads();
+  else if (state.activeTab === "downloads") render();
   Promise.allSettled([fetchRadios(), fetchReciters()]).then(() => {
-    if (["home", "radios", "library"].includes(state.activeTab)) render();
+    if (["radios", "library"].includes(state.activeTab)) render();
+    else if (state.activeTab === "home") refreshHomeRadioFavorites();
   });
 });
