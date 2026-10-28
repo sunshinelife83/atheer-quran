@@ -248,10 +248,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .card.playing::after { right: 0; bottom: 0; left: 0; height: 26px; opacity: .25; -webkit-mask-size: 160px 26px; mask-size: 160px 26px; -webkit-mask-position: center bottom; mask-position: center bottom; animation: waveformDrift 4s linear infinite; }
 .card h3, .card h4 { font-size: .98rem; line-height: 1.45; }
 .card p { margin-top: 5px; color: var(--ink-muted); font-size: .8rem; line-height: 1.55; }
+.card > div { flex: 1; min-width: 0; }
 .row-actions { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .play-button, .download-button { width: 42px; min-width: 42px; height: 42px; color: var(--ink-muted); border: 1px solid var(--line); background: transparent; }
 .play-button:hover, .download-button:hover { color: var(--ink); border-color: var(--line-strong); background: var(--surface-hover); }
 .play-button.active { color: var(--accent-ink); border-color: var(--accent); background: var(--accent); }
+.radio-source-link { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; min-height: 40px; padding: 0 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--accent-strong); background: transparent; font-size: .7rem; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.radio-source-link:hover { color: var(--ink); border-color: var(--line-strong); background: var(--surface-hover); }
+.radio-country-label { display: block; margin-top: 5px; color: var(--ink-faint); font-size: .72rem; }
 .download-button.saved { color: var(--brass); }
 .download-button.delete { color: var(--danger); }
 .download-button.is-loading { pointer-events: none; color: var(--accent-strong); }
