@@ -19,19 +19,15 @@
     <link rel="preload" href="/fonts/tajawal-arabic-400.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/tajawal-arabic-700.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/qpc-v2-page-574.woff2" as="font" type="font/woff2" crossorigin />
+    <script src="/theme.js"></script>
+    <link rel="stylesheet" href="/tokens.css" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
 
-    <script>
-      (function () {
-        try {
-          var t = localStorage.getItem("atheer_theme");
-          if (!t) t = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-          if (t === "light") document.body.classList.add("light");
-        } catch (e) {}
-      })();
-    </script>
+    <a href="#main-content" class="skip-link">
+      انتقل إلى المحتوى الرئيسي
+    </a>
 
     <!-- App header -->
     <nav class="topbar" role="navigation" aria-label="التنقل الرئيسي">
@@ -75,14 +71,11 @@
     <header class="hero" role="banner">
       <div class="shell hero-content">
         <div class="hero-copy">
-          <div class="badge" role="note">
-            تجربة استماع هادئة
-          </div>
           <h2 class="hero-title">
-            استمع إلى ما تحتاجه، ثم أكمل من حيث توقفت.
+            استمع، وتابع من حيث توقفت.
           </h2>
           <p>
-            إذاعات مباشرة، مكتبة تلاوات، وتنزيلات تعمل دون اتصال—بواجهة واحدة واضحة.
+            بث مباشر، تلاوات، واستماع دون اتصال.
           </p>
         </div>
         <nav class="tabs" role="tablist" aria-label="أقسام التطبيق">
@@ -167,7 +160,7 @@
           <p class="playback-status hidden" id="playbackStatus" role="status" aria-live="polite"></p>
         </div>
 
-        <div class="player-actions" style="display: flex; gap: 4px;">
+        <div class="player-actions">
           <button class="tool-button" id="hidePlayerBtn" type="button" title="تصغير المشغل" aria-label="تصغير المشغل">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M4 14h6v6" /><path d="M20 10h-6V4" /><path d="M14 10l7-7" /><path d="M3 21l7-7" />
@@ -229,10 +222,6 @@
         <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
       </svg>
     </button>
-
-    <a href="#main-content" class="skip-link">
-      انتقل إلى المحتوى الرئيسي
-    </a>
 
     <script type="module" src="/app.js"></script>
   </body>

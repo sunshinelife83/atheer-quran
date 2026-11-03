@@ -57,6 +57,7 @@ npm test
 ## البنية
 
 - `index.html`, `app.js`, `styles.css`: التطبيق والواجهة الحالية.
+- `public/tokens.css`, `public/theme.js`: رموز الألوان المشتركة وتهيئة المظهر قبل عرض التطبيق وصفحات المحتوى العامة.
 - `src/worker.js`: صفحات المحتوى العامة، metadata، Sitemap وrobots وproxy بيانات API.
 - `src/seo.js`, `public/seo.css`: توليد الروابط والـslugs وHTML الدلالي وتنسيق صفحات المحتوى.
 - `src/api/metadata.js`: التحقق من metadata الخارجية وإسقاط الحقول غير المستخدمة قبل إدخالها إلى حالة التطبيق.

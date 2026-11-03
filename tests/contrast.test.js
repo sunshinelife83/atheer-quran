@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+const css = readFileSync(new URL("../public/tokens.css", import.meta.url), "utf8");
 
 function variablesFor(selector) {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const block = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))?.[1];
+  const block = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .find(([, selectors]) => selectors
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split(",")
+      .some((candidate) => candidate.trim() === selector))?.[2];
   assert.ok(block, `Missing CSS token block: ${selector}`);
   return Object.fromEntries([...block.matchAll(/--([\w-]+):\s*([^;]+);/g)].map(([, name, value]) => [name, value.trim()]));
 }
@@ -43,16 +46,34 @@ function contrastRatio(foreground, background) {
   return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
 }
 
-test("faint text meets WCAG AA contrast on all theme surfaces", () => {
-  const themes = [
+function themeVariables() {
+  return [
     ["dark", variablesFor(":root")],
-    ["light", { ...variablesFor(":root"), ...variablesFor("body.light") }]
+    ["light", { ...variablesFor(":root"), ...variablesFor(':root[data-theme="light"]') }]
   ];
+}
 
-  for (const [theme, variables] of themes) {
+test("faint and muted text meet WCAG AA contrast on all theme surfaces", () => {
+  const surfaces = ["bg", "bg-raised", "surface", "surface-hover", "surface-active"];
+
+  for (const [theme, variables] of themeVariables()) {
+    for (const foreground of ["ink-muted", "ink-faint"]) {
+      for (const surface of surfaces) {
+        const ratio = contrastRatio(variables[foreground], variables[surface]);
+        assert.ok(ratio >= 4.5, `${theme} ${foreground} contrast on ${surface} is ${ratio.toFixed(2)}:1`);
+      }
+    }
+  }
+});
+
+test("primary action text and focus indicators maintain required contrast", () => {
+  for (const [theme, variables] of themeVariables()) {
+    const actionRatio = contrastRatio(variables["accent-ink"], variables.accent);
+    assert.ok(actionRatio >= 4.5, `${theme} primary action text contrast is ${actionRatio.toFixed(2)}:1`);
+
     for (const surface of ["bg", "bg-raised", "surface", "surface-hover", "surface-active"]) {
-      const ratio = contrastRatio(variables["ink-faint"], variables[surface]);
-      assert.ok(ratio >= 4.5, `${theme} ink-faint contrast on ${surface} is ${ratio.toFixed(2)}:1`);
+      const focusRatio = contrastRatio(variables.focus, variables[surface]);
+      assert.ok(focusRatio >= 3, `${theme} focus indicator contrast on ${surface} is ${focusRatio.toFixed(2)}:1`);
     }
   }
 });

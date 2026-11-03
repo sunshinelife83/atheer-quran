@@ -66,6 +66,8 @@ function createWorker(indexHtml = "") {
 
 test("install precaches Vite's fingerprinted same-origin assets", async () => {
   const html = `
+    <link rel="stylesheet" href="/site/tokens.css">
+    <script src="/site/theme.js"></script>
     <link rel="stylesheet" href="/site/assets/app-BUILD123.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="icon" href="/site/icon.svg">
@@ -78,6 +80,8 @@ test("install precaches Vite's fingerprinted same-origin assets", async () => {
 
   assert.ok(worker.entries.has("https://app.example/site/assets/app-BUILD123.css"));
   assert.ok(worker.entries.has("https://app.example/site/assets/app-BUILD123.js"));
+  assert.ok(worker.entries.has("https://app.example/site/tokens.css"));
+  assert.ok(worker.entries.has("https://app.example/site/theme.js"));
   assert.ok(worker.entries.has("https://app.example/site/index.html"));
   assert.equal([...worker.entries.keys()].some((url) => url.includes("fonts.googleapis.com")), false);
 });

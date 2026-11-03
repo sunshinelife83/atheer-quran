@@ -74,13 +74,15 @@ function writeStorage(key, value) {
   }
 }
 
+const storedTheme = readStorage("atheer_theme");
+const hasSavedTheme = storedTheme === "light" || storedTheme === "dark";
+const initialTheme = hasSavedTheme
+  ? storedTheme
+  : window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+
 const state = {
-  theme: (() => {
-    const stored = readStorage("atheer_theme");
-    if (stored) return stored;
-    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-  })(),
-  themeManuallySet: !!readStorage("atheer_theme"),
+  theme: initialTheme,
+  themeManuallySet: hasSavedTheme,
   // A previous release may have saved a tab that no longer exists. Never let
   // persisted browser state leave the content panel without a renderer.
   activeTab: (() => {
@@ -238,6 +240,7 @@ function streamUrl(server, surahId) {
 
 function setTheme(theme, persist = true) {
   state.theme = theme;
+  document.documentElement.dataset.theme = theme;
   document.body.classList.toggle("light", theme === "light");
   els.themeIcon.innerHTML = theme === "light" ? ICONS.sun : ICONS.moon;
   if (persist) {
@@ -276,18 +279,8 @@ function syncTabIndicator() {
   const instant = lastInputKind === "keyboard" || reducedMotion.matches;
   els.tabIndicator.classList.toggle("instant", instant);
   requestAnimationFrame(() => {
-    els.tabIndicator.style.width = `${activeTab.offsetWidth}px`;
-    els.tabIndicator.style.transform = `translateX(${activeTab.offsetLeft}px)`;
+    els.tabIndicator.style.transform = `translateX(${activeTab.offsetLeft}px) scaleX(${activeTab.offsetWidth})`;
     if (instant) requestAnimationFrame(() => els.tabIndicator.classList.remove("instant"));
-  });
-}
-
-function markViewEntries() {
-  if (reducedMotion.matches || lastInputKind === "keyboard") return;
-  els.view.querySelectorAll(".home-hero, .panel, .quick-card, .card, .settings-panel").forEach((item, index) => {
-    if (index > 7) return;
-    item.style.setProperty("--entry-index", index);
-    item.classList.add("view-item-enter");
   });
 }
 
@@ -348,7 +341,6 @@ function setViewHtml(markup, { animate = true } = {}) {
           }
         }
       }
-      markViewEntries();
       announceView();
       els.view.dispatchEvent(new CustomEvent("viewcommit"));
     };
@@ -607,7 +599,7 @@ function renderHome() {
     <div class="home-grid">
       <section class="home-hero">
         <div class="home-copy">
-          <span class="badge">آية اليوم</span>
+          <span class="badge">آية من القرآن الكريم</span>
           <h2 class="mushaf-verse" lang="ar" dir="rtl" aria-label="أَوْ زِدْ عَلَيْهِ وَرَتِّلِ الْقُرْآنَ تَرْتِيلًا">ﱏ ﱐ ﱑ ﱒ ﱓ ﱔ ﱕ</h2>
           <p class="verse-reference">سورة المزمل · الآية ٤</p>
           <p>كل شيء قريب: آخر استماع، إذاعاتك المفضلة، المكتبة الصوتية، والتنزيلات المحفوظة على هذا الجهاز.</p>

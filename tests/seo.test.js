@@ -15,7 +15,7 @@ const reciters = [{
 const radios = [{ id: 8, name: "إذاعة تجريبية", url: "https://stream.example/live" }];
 const env = {
   SITE_URL: "https://site.example",
-  ASSETS: { fetch: async () => new Response(`<!doctype html><html lang="ar" dir="rtl"><head><title>old</title><meta name="description" content="old"><link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png"></head><body><main></main><!-- SEO_DIRECTORY --><section>old directory</section><!-- SEO_DIRECTORY_END --><script type="module" src="/assets/main.js"></script></body></html>`, { headers: { "content-type": "text/html" } }) }
+  ASSETS: { fetch: async () => new Response(`<!doctype html><html lang="ar" dir="rtl"><head><title>old</title><meta name="description" content="old"><link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png"><script src="/theme.js"></script><link rel="stylesheet" href="/tokens.css"></head><body><a class="skip-link" href="#main-content">انتقل إلى المحتوى الرئيسي</a><header><div class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"></svg></div><button id="themeToggle"></button></header><main id="main-content"></main><!-- SEO_DIRECTORY --><section>old directory</section><!-- SEO_DIRECTORY_END --><script type="module" src="/assets/main.js"></script></body></html>`, { headers: { "content-type": "text/html" } }) }
 };
 
 function fixtureFetch(url) {
@@ -39,6 +39,11 @@ function canonicalCount(html) {
 function assertBrandMetadata(html) {
   assert.match(html, /<link rel="icon" type="image\/png" sizes="96x96" href="\/favicon-96\.png">/);
   assert.match(html, /<meta property="og:site_name" content="أثير القرآن">/);
+  assert.match(html, /<script src="\/theme\.js"><\/script><link rel="stylesheet" href="\/tokens\.css">/);
+  assert.match(html, /<a class="skip-link" href="#main-content">انتقل إلى المحتوى الرئيسي<\/a>/);
+  assert.match(html, /<main\b[^>]*id="main-content"/);
+  assert.match(html, /<button[^>]+(?:data-theme-toggle|id="themeToggle")/);
+  assert.match(html, /class="brand-mark"[^>]*>\s*<svg viewBox="0 0 24 24"[^>]*stroke-width="1\.2">/);
   assert.doesNotMatch(html, /Cloudflare/);
 }
 
@@ -142,6 +147,7 @@ test("Worker renders crawlable pages, metadata, sitemap, robots, and noindex err
     const surahHtml = await surah.text();
     assert.equal(surah.status, 200);
     assert.match(surahHtml, /<h1>سورة الفاتحة<\/h1>/);
+    assert.match(surahHtml, /<main id="main-content" class="shell main seo-page">/);
     assert.match(surahHtml, /عدد الآيات: 7/);
     assert.match(surahHtml, /مكية/);
     assert.match(surahHtml, /قارئ تجريبي/);
