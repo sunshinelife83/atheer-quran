@@ -44,10 +44,20 @@ const ICONS = {
   chevronUp: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`
 };
 
+let storageFailureReported = false;
+
+function reportStorageFailure(error) {
+  document.getElementById("storageWarning")?.classList.remove("hidden");
+  if (storageFailureReported) return;
+  storageFailureReported = true;
+  console.warn("[أثير] Browser storage is unavailable; preferences and listening history may not persist.", error);
+}
+
 function readStorage(key, fallback = null) {
   try {
     return localStorage.getItem(key) ?? fallback;
-  } catch {
+  } catch (error) {
+    reportStorageFailure(error);
     return fallback;
   }
 }
@@ -56,7 +66,8 @@ function writeStorage(key, value) {
   try {
     localStorage.setItem(key, value);
     return true;
-  } catch {
+  } catch (error) {
+    reportStorageFailure(error);
     return false;
   }
 }
@@ -85,6 +96,7 @@ const state = {
   selectedRewayahKey: "",
   selectedReciter: null,
   downloaded: [],
+  downloadStatus: "loading",
   downloadsStep: "rewayat",
   selectedDownloadRewayah: "",
   selectedDownloadReciterId: null,
@@ -110,6 +122,7 @@ const state = {
 
 const els = {
   view: document.getElementById("view"),
+  viewAnnouncement: document.getElementById("viewAnnouncement"),
   networkStatus: document.getElementById("networkStatus"),
   networkMessage: document.getElementById("networkMessage"),
   tabs: document.querySelectorAll(".tab"),
@@ -132,6 +145,7 @@ const els = {
   volume: document.getElementById("volume"),
   seekRow: document.getElementById("seekRow"),
   liveRow: document.getElementById("liveRow"),
+  playbackStatus: document.getElementById("playbackStatus"),
   prev: document.getElementById("prevBtn"),
   next: document.getElementById("nextBtn"),
   repeat: document.getElementById("repeatBtn"),
@@ -184,6 +198,16 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
   })[char]);
+}
+
+function safeExternalUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.href : "";
+  } catch (error) {
+    if (error instanceof TypeError) return "";
+    throw error;
+  }
 }
 
 function normalize(text) {
@@ -267,12 +291,32 @@ function markViewEntries() {
   });
 }
 
+function announceView() {
+  const heading = els.view.querySelector(".title-copy h2, .section-title h2");
+  const title = heading?.textContent.trim() || document.getElementById(`tab-${state.activeTab}`)?.textContent.trim() || "";
+  const grid = els.view.querySelector(".grid");
+  const count = grid?.querySelectorAll(":scope > .card").length;
+  const search = els.view.querySelector('input[type="search"]')?.value.trim();
+  const emptyHeading = els.view.querySelector(".empty h3")?.textContent.trim();
+  const emptyDetail = els.view.querySelector(".empty p")?.textContent.trim();
+  const message = search
+    ? `${new Intl.NumberFormat("ar").format(count || 0)} نتيجة للبحث عن ${search}`
+    : emptyHeading
+      ? `${emptyHeading}${emptyDetail ? `. ${emptyDetail}` : ""}`
+      : `${title}${count === undefined ? "" : `، ${new Intl.NumberFormat("ar").format(count)} عنصر`}`;
+  if (message && els.viewAnnouncement.textContent !== message) els.viewAnnouncement.textContent = message;
+}
+
 function setViewHtml(markup, { animate = true } = {}) {
   const revision = ++viewRevision;
   const focused = document.activeElement;
   const restoreId = focused instanceof HTMLInputElement && els.view.contains(focused) ? focused.id : "";
   const selectionStart = restoreId ? focused.selectionStart : null;
   const selectionEnd = restoreId ? focused.selectionEnd : null;
+  const restoreAction = !restoreId && els.view.contains(focused) && (focused instanceof HTMLButtonElement || focused instanceof HTMLAnchorElement)
+    ? focused
+    : null;
+  const restoreActionData = restoreAction ? { ...restoreAction.dataset } : null;
 
   const pillsScroll = els.view.querySelector('.pills')?.scrollLeft || 0;
 
@@ -290,8 +334,22 @@ function setViewHtml(markup, { animate = true } = {}) {
           replacement.focus({ preventScroll: true });
           replacement.setSelectionRange(selectionStart ?? replacement.value.length, selectionEnd ?? replacement.value.length);
         }
+      } else if (restoreActionData) {
+        const replacement = [...els.view.querySelectorAll("button, a")].find((candidate) =>
+          candidate.tagName === restoreAction.tagName
+          && Object.entries(restoreActionData).every(([key, value]) => candidate.dataset[key] === value)
+        );
+        if (replacement) replacement.focus({ preventScroll: true });
+        else {
+          const heading = els.view.querySelector(".title-copy h2, .section-title h2, h2, h3");
+          if (heading) {
+            heading.tabIndex = -1;
+            heading.focus();
+          }
+        }
       }
       markViewEntries();
+      announceView();
       els.view.dispatchEvent(new CustomEvent("viewcommit"));
     };
 
@@ -484,7 +542,9 @@ function render() {
     const isActive = tab.dataset.tab === state.activeTab;
     tab.classList.toggle("active", isActive);
     tab.setAttribute("aria-selected", isActive ? "true" : "false");
+    tab.tabIndex = isActive ? 0 : -1;
   });
+  els.view.setAttribute("aria-labelledby", `tab-${state.activeTab}`);
   syncTabIndicator();
   try {
     if (state.activeTab === "home") renderHome();
@@ -507,6 +567,12 @@ function downloadedSizeMb() {
   return state.downloaded.reduce((sum, item) => sum + (parseFloat(item.fileSize) || 0), 0);
 }
 
+function downloadSummary() {
+  if (state.downloadStatus === "loading") return "جاري تحميل الملفات المحفوظة";
+  if (state.downloadStatus === "error") return "تعذر الوصول إلى الملفات المحفوظة";
+  return `${state.downloaded.length} ملف · ${downloadedSizeMb().toFixed(1)} MB`;
+}
+
 function isCurrentSurahPlaying(reciterId, surahId) {
   const track = state.currentAudio;
   return !!track && !track.isRadio && !els.audio.paused
@@ -526,7 +592,6 @@ function renderHome() {
   const latestPlaying = latest && isCurrentSurahPlaying(latest.reciterId, latest.surahId);
   const favRadios = state.radios.filter((radio) => state.favoritesRadios.includes(radio.id)).slice(0, 4);
   const recentDownloads = [...state.downloaded].sort((a, b) => (b.downloadedAt || "").localeCompare(a.downloadedAt || "")).slice(0, 4);
-  const sizeMb = downloadedSizeMb();
 
   setViewHtml(`
     <div class="home-grid">
@@ -558,7 +623,7 @@ function renderHome() {
           ${latest
             ? miniItem(latest.surahName, `${latest.reciterName} · ${formatTime(latest.timestamp)} من ${formatTime(latest.duration)}`, "data-resume-latest")
             : miniItem("لا يوجد استماع محفوظ", "سيظهر هنا آخر موضع توقفت عنده", "data-go-tab=\"radios\"")}
-          ${miniItem("التنزيلات", `${state.downloaded.length} ملف · ${sizeMb.toFixed(1)} MB`, "data-go-tab=\"downloads\" data-home-download-summary")}
+          ${miniItem("التنزيلات", downloadSummary(), "data-go-tab=\"downloads\" data-home-download-summary")}
           ${miniItem("المفضلة", `${state.favoritesRadios.length} إذاعة · ${state.favoritesReciters.length} قارئ`, "data-go-tab=\"radios\"")}
         </div>
       </aside>
@@ -590,15 +655,19 @@ function renderHome() {
         <h3>إذاعات مفضلة</h3>
         <div class="mini-list">
           ${favRadios.length
-            ? favRadios.map((radio) => miniItem(radio.name, "بث مباشر", `data-play-radio="${radio.id}"`)).join("")
+            ? favRadios.map((radio) => miniItem(radio.name, "بث مباشر", `data-play-radio="${escapeHtml(radio.id)}"`)).join("")
             : miniItem("لا توجد إذاعات مفضلة", "اضغط النجمة في بطاقات الراديو", "data-go-tab=\"radios\"")}
         </div>
       </section>
       <section class="panel" data-home-recent-downloads>
         <h3>آخر التنزيلات</h3>
         <div class="mini-list">
-          ${recentDownloads.length
-            ? recentDownloads.map((track) => miniItem(track.surahName, track.reciterName, `data-play-download="${track.id}"`)).join("")
+          ${state.downloadStatus === "loading"
+            ? miniItem("تحميل التنزيلات", "جارٍ قراءة الملفات المحفوظة على هذا الجهاز", "data-go-tab=\"downloads\"")
+            : state.downloadStatus === "error"
+              ? miniItem("تعذر تحميل التنزيلات", "اضغط لإعادة المحاولة", "data-go-tab=\"downloads\"")
+              : recentDownloads.length
+            ? recentDownloads.map((track) => miniItem(track.surahName, track.reciterName, `data-play-download="${escapeHtml(track.id)}"`)).join("")
             : miniItem("لا توجد تنزيلات", "احفظ السور من المكتبة للاستماع دون اتصال", "data-go-tab=\"library\"")}
         </div>
       </section>
@@ -611,22 +680,28 @@ function refreshHomeRadioFavorites() {
   if (!list) return;
   const favRadios = state.radios.filter((radio) => state.favoritesRadios.includes(radio.id)).slice(0, 4);
   list.innerHTML = favRadios.length
-    ? favRadios.map((radio) => miniItem(radio.name, "بث مباشر", `data-play-radio="${radio.id}"`)).join("")
+    ? favRadios.map((radio) => miniItem(radio.name, "بث مباشر", `data-play-radio="${escapeHtml(radio.id)}"`)).join("")
     : miniItem("لا توجد إذاعات مفضلة", "اضغط النجمة في بطاقات الراديو", "data-go-tab=\"radios\"");
 }
 
 function refreshHomeDownloads() {
   const summary = els.view.querySelector("[data-home-download-summary]");
   if (summary) {
-    summary.outerHTML = miniItem("التنزيلات", `${state.downloaded.length} ملف · ${downloadedSizeMb().toFixed(1)} MB`, "data-go-tab=\"downloads\" data-home-download-summary").trim();
+    summary.outerHTML = miniItem("التنزيلات", downloadSummary(), "data-go-tab=\"downloads\" data-home-download-summary").trim();
   }
 
   const list = els.view.querySelector("[data-home-recent-downloads] .mini-list");
   if (!list) return;
   const recentDownloads = [...state.downloaded].sort((a, b) => (b.downloadedAt || "").localeCompare(a.downloadedAt || "")).slice(0, 4);
-  list.innerHTML = recentDownloads.length
-    ? recentDownloads.map((track) => miniItem(track.surahName, track.reciterName, `data-play-download="${track.id}"`)).join("")
-    : miniItem("لا توجد تنزيلات", "احفظ السور من المكتبة للاستماع دون اتصال", "data-go-tab=\"library\"");
+  if (state.downloadStatus === "loading") {
+    list.innerHTML = miniItem("تحميل التنزيلات", "جارٍ قراءة الملفات المحفوظة على هذا الجهاز", "data-go-tab=\"downloads\"");
+  } else if (state.downloadStatus === "error") {
+    list.innerHTML = miniItem("تعذر تحميل التنزيلات", "اضغط لإعادة المحاولة", "data-go-tab=\"downloads\"");
+  } else {
+    list.innerHTML = recentDownloads.length
+      ? recentDownloads.map((track) => miniItem(track.surahName, track.reciterName, `data-play-download="${escapeHtml(track.id)}"`)).join("")
+      : miniItem("لا توجد تنزيلات", "احفظ السور من المكتبة للاستماع دون اتصال", "data-go-tab=\"library\"");
+  }
 }
 
 function stat(label, value) {
@@ -683,15 +758,15 @@ function renderRadios() {
 
   els.view.addEventListener("viewcommit", () => {
     if (state.onlyFavoriteRadios) return;
-    scrollRadioPillIntoView(
-      document.querySelector(".radio-category-pills"),
-      `[data-radio-cat="${state.radioCategory}"]`
-    );
+    const categoryContainer = document.querySelector(".radio-category-pills");
+    const categoryButton = [...(categoryContainer?.querySelectorAll("[data-radio-cat]") || [])]
+      .find((button) => button.dataset.radioCat === state.radioCategory);
+    scrollRadioPillIntoView(categoryContainer, categoryButton);
     if (state.radioCategory === "countries") {
-      scrollRadioPillIntoView(
-        document.querySelector(".radio-country-pills"),
-        `[data-radio-country="${state.radioCountry}"]`
-      );
+      const countryContainer = document.querySelector(".radio-country-pills");
+      const countryButton = [...(countryContainer?.querySelectorAll("[data-radio-country]") || [])]
+        .find((button) => button.dataset.radioCountry === state.radioCountry);
+      scrollRadioPillIntoView(countryContainer, countryButton);
     }
   }, { once: true });
 
@@ -699,17 +774,16 @@ function renderRadios() {
     ${sectionHeader("الإذاعات والبث المباشر", `${state.radios.length} محطة وقناة`, "radioSearch", "ابحث عن إذاعة أو شيخ...", state.searches.radios)}
     ${navigator.onLine ? "" : `<div class="offline-callout" role="status">البث المباشر يحتاج إلى اتصال بالإنترنت؛ تنزيلاتك الصوتية متاحة دون اتصال.</div>`}
     <div class="pills radio-category-pills">
-      ${labels.map(([key, label]) => `<button class="pill ${state.radioCategory === key && !state.onlyFavoriteRadios ? "active" : ""}" data-radio-cat="${key}">${label} <span class="meta">${(state.categorizedRadios[key] || []).length}</span></button>`).join("")}
-      <button class="pill ${state.onlyFavoriteRadios ? "active" : ""}" data-fav-radios>المفضلة ${state.favoritesRadios.length}</button>
+      ${labels.map(([key, label]) => `<button class="pill ${state.radioCategory === key && !state.onlyFavoriteRadios ? "active" : ""}" data-radio-cat="${key}" aria-pressed="${state.radioCategory === key && !state.onlyFavoriteRadios}">${label} <span class="meta">${(state.categorizedRadios[key] || []).length}</span></button>`).join("")}
+      <button class="pill ${state.onlyFavoriteRadios ? "active" : ""}" data-fav-radios aria-pressed="${state.onlyFavoriteRadios}">المفضلة ${state.favoritesRadios.length}</button>
     </div>
-    ${state.radioCategory === "countries" && !state.onlyFavoriteRadios ? `<div class="pills radio-country-pills" aria-label="تصفية الإذاعات حسب البلد"><button class="pill ${state.radioCountry === "all" ? "active" : ""}" data-radio-country="all">كل البلدان</button>${countries.map((country) => `<button class="pill ${state.radioCountry === country ? "active" : ""}" data-radio-country="${escapeHtml(country)}">${escapeHtml(country)}</button>`).join("")}</div>` : ""}
+    ${state.radioCategory === "countries" && !state.onlyFavoriteRadios ? `<div class="pills radio-country-pills" aria-label="تصفية الإذاعات حسب البلد"><button class="pill ${state.radioCountry === "all" ? "active" : ""}" data-radio-country="all" aria-pressed="${state.radioCountry === "all"}">كل البلدان</button>${countries.map((country) => `<button class="pill ${state.radioCountry === country ? "active" : ""}" data-radio-country="${escapeHtml(country)}" aria-pressed="${state.radioCountry === country}">${escapeHtml(country)}</button>`).join("")}</div>` : ""}
     ${list.length ? `<div class="grid">${list.map(radioCard).join("")}</div>` : empty("لا توجد نتائج", "جرّب تعديل البحث أو اختر تصنيفًا آخر.")}
   `);
 }
 
-function scrollRadioPillIntoView(container, selector) {
-  const button = container?.querySelector(selector);
-  if (!button) return;
+function scrollRadioPillIntoView(container, button) {
+  if (!container || !button) return;
   const containerRect = container.getBoundingClientRect();
   const buttonRect = button.getBoundingClientRect();
   if (buttonRect.left < containerRect.left) container.scrollLeft -= containerRect.left - buttonRect.left;
@@ -719,12 +793,14 @@ function scrollRadioPillIntoView(container, selector) {
 function radioCard(radio) {
   const playing = state.currentAudio?.isRadio && state.currentAudio.url === radio.url && !els.audio.paused;
   const favorite = state.favoritesRadios.includes(radio.id);
-  const external = Boolean(radio.externalUrl);
+  const externalUrl = safeExternalUrl(radio.externalUrl);
   const featured = Boolean(radio.country || radio.group === "haramain");
-  const playAction = external
-    ? `<a class="radio-source-link" href="${escapeHtml(radio.externalUrl)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(radio.externalLabel || "افتح المصدر الرسمي")}" title="${escapeHtml(radio.externalLabel || "افتح المصدر الرسمي")}"><span>${escapeHtml(radio.externalLabel || "المصدر الرسمي")}</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a>`
-    : `<button class="play-button ${playing ? "active" : ""}" data-play-radio="${radio.id}" title="تشغيل" aria-label="تشغيل ${escapeHtml(radio.name)}">${playing ? ICONS.pause : ICONS.play}</button>`;
-  const favoriteButton = `<button class="download-button ${favorite ? "saved" : ""}" data-fav-radio="${radio.id}" title="المفضلة" aria-label="إضافة ${escapeHtml(radio.name)} إلى المفضلة">${favorite ? ICONS.starFilled : ICONS.starEmpty}</button>`;
+  const playAction = externalUrl
+    ? `<a class="radio-source-link" href="${escapeHtml(externalUrl)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(radio.externalLabel || "افتح المصدر الرسمي")}" title="${escapeHtml(radio.externalLabel || "افتح المصدر الرسمي")}"><span>${escapeHtml(radio.externalLabel || "المصدر الرسمي")}</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a>`
+    : radio.mediaType === "video"
+      ? `<span class="radio-source-link" role="note">رابط المشاهدة غير متاح</span>`
+      : `<button class="play-button ${playing ? "active" : ""}" data-play-radio="${escapeHtml(radio.id)}" title="${playing ? "إيقاف مؤقت" : "تشغيل"}" aria-label="${playing ? "إيقاف" : "تشغيل"} ${escapeHtml(radio.name)}">${playing ? ICONS.pause : ICONS.play}</button>`;
+  const favoriteButton = `<button class="download-button ${favorite ? "saved" : ""}" data-fav-radio="${escapeHtml(radio.id)}" title="${favorite ? "إزالة من المفضلة" : "إضافة إلى المفضلة"}" aria-label="${favorite ? "إزالة" : "إضافة"} ${escapeHtml(radio.name)} ${favorite ? "من" : "إلى"} المفضلة" aria-pressed="${favorite}">${favorite ? ICONS.starFilled : ICONS.starEmpty}</button>`;
   const badgeText = playing ? "قيد التشغيل" : (radio.mediaType === "video" ? "بث مرئي رسمي" : "بث مباشر");
   return `
     <article class="card ${playing ? "playing" : ""} ${featured ? "radio-card-featured" : ""}">
@@ -755,13 +831,13 @@ function renderLibrary() {
     setViewHtml(`
       ${sectionHeader("المكتبة الصوتية", "اختر رواية لاستعراض القراء المتوفرين", "", "")}
       <div class="grid">${Object.entries(state.groupedRewayat).map(([key, group]) => `
-        <article class="card clickable" data-open-rewayah="${key}">
-          <div>
-            <h3>${escapeHtml(group.riwayahName)}</h3>
-            <p>${group.reciters.length} قارئ متوفر</p>
-          </div>
+        <button class="card card-navigation" type="button" data-open-rewayah="${escapeHtml(key)}">
+          <span class="card-navigation-copy">
+            <span class="card-navigation-title">${escapeHtml(group.riwayahName)}</span>
+            <span class="card-navigation-detail">${group.reciters.length} قارئ متوفر</span>
+          </span>
           ${ICONS.chevronLeft}
-        </article>
+        </button>
       `).join("")}</div>
     `);
     return;
@@ -799,12 +875,12 @@ function renderLibrary() {
 function reciterCard(reciter) {
   const favorite = state.favoritesReciters.includes(reciter.reciterId);
   return `
-    <article class="card clickable" data-open-reciter="${reciter.reciterId}" data-moshaf="${reciter.moshaf.id}">
-      <div>
-        <h3>الشيخ ${escapeHtml(reciter.reciterName)}</h3>
-        <p>${reciter.moshaf.surah_total === 114 ? "المصحف كامل" : `${reciter.moshaf.surah_total} سورة`}</p>
-      </div>
-      <button class="download-button ${favorite ? "saved" : ""}" data-fav-reciter="${reciter.reciterId}" title="المفضلة">${favorite ? ICONS.starFilled : ICONS.starEmpty}</button>
+    <article class="card">
+      <button class="card-navigation-copy card-open-action" type="button" data-open-reciter="${escapeHtml(reciter.reciterId)}" data-moshaf="${escapeHtml(reciter.moshaf.id)}">
+        <span class="card-navigation-title">الشيخ ${escapeHtml(reciter.reciterName)}</span>
+        <span class="card-navigation-detail">${reciter.moshaf.surah_total === 114 ? "المصحف كامل" : `${reciter.moshaf.surah_total} سورة`}</span>
+      </button>
+      <button class="download-button ${favorite ? "saved" : ""}" data-fav-reciter="${escapeHtml(reciter.reciterId)}" title="${favorite ? "إزالة من المفضلة" : "إضافة إلى المفضلة"}" aria-label="${favorite ? "إزالة" : "إضافة"} الشيخ ${escapeHtml(reciter.reciterName)} ${favorite ? "من" : "إلى"} المفضلة" aria-pressed="${favorite}">${favorite ? ICONS.starFilled : ICONS.starEmpty}</button>
     </article>
   `;
 }
@@ -818,10 +894,10 @@ function surahCard(surah, reciter, riwayahName) {
   return `
     <article class="card ${playing ? "playing" : ""}">
       <div class="row-actions">
-        <button class="play-button ${playing ? "active" : ""}" data-play-surah="${surah.id}" data-reciter="${reciter.reciterId}" data-moshaf="${reciter.moshaf.id}" title="تشغيل">${playing ? ICONS.pause : ICONS.play}</button>
+        <button class="play-button ${playing ? "active" : ""}" data-play-surah="${escapeHtml(surah.id)}" data-reciter="${escapeHtml(reciter.reciterId)}" data-moshaf="${escapeHtml(reciter.moshaf.id)}" title="${playing ? "إيقاف مؤقت" : "تشغيل"}" aria-label="${playing ? "إيقاف" : "تشغيل"} سورة ${escapeHtml(surah.name)} بصوت الشيخ ${escapeHtml(reciter.reciterName)}">${playing ? ICONS.pause : ICONS.play}</button>
         ${downloaded
-          ? `<span class="saved-badge ${state.downloadSuccessId === id ? "saved-confirm" : ""}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="margin-inline-end:4px;"><polyline points="20 6 9 17 4 12"/></svg>محفوظ</span><button class="download-button delete" data-delete-download="${id}" title="حذف">${ICONS.delete}</button>`
-          : `<button class="download-button ${downloading ? "is-loading" : ""}" data-download-surah="${surah.id}" data-reciter="${reciter.reciterId}" data-moshaf="${reciter.moshaf.id}" title="${downloading ? "جاري التنزيل" : "تنزيل"}" aria-label="${downloading ? "جاري تنزيل السورة" : "تنزيل السورة"}" aria-busy="${downloading}" ${downloading ? "disabled" : ""}>${ICONS.download}</button>`}
+          ? `<span class="saved-badge ${state.downloadSuccessId === id ? "saved-confirm" : ""}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="margin-inline-end:4px;"><polyline points="20 6 9 17 4 12"/></svg>محفوظ</span><button class="download-button delete" data-delete-download="${escapeHtml(id)}" title="حذف" aria-label="حذف سورة ${escapeHtml(surah.name)} من التنزيلات">${ICONS.delete}</button>`
+          : `<button class="download-button ${downloading ? "is-loading" : ""}" data-download-surah="${escapeHtml(surah.id)}" data-reciter="${escapeHtml(reciter.reciterId)}" data-moshaf="${escapeHtml(reciter.moshaf.id)}" title="${downloading ? "جاري التنزيل" : "تنزيل"}" aria-label="${downloading ? "جارٍ تنزيل" : "تنزيل"} سورة ${escapeHtml(surah.name)} بصوت الشيخ ${escapeHtml(reciter.reciterName)}" aria-busy="${downloading}" ${downloading ? "disabled" : ""}>${ICONS.download}</button>`}
       </div>
       <div>
         <h4>سورة ${escapeHtml(surah.name)}</h4>
@@ -836,6 +912,12 @@ async function renderDownloads() {
     await refreshDownloads();
   } catch (err) {
     console.warn("[أثير] refreshDownloads failed:", err);
+    setViewHtml(empty(
+      "تعذر تحميل التنزيلات",
+      "لم نتمكن من قراءة الملفات المحفوظة على هذا الجهاز. أعد المحاولة أو تحقق من مساحة التخزين في المتصفح.",
+      '<button class="cta-button" type="button" data-retry-downloads>إعادة المحاولة</button>'
+    ));
+    return;
   }
   const sizeMb = downloadedSizeMb();
   if (!state.downloaded.length) {
@@ -853,7 +935,7 @@ async function renderDownloads() {
       </div>
       <div class="grid">${Object.entries(tree).map(([riwayah, reciters]) => {
         const total = Object.values(reciters).reduce((sum, item) => sum + item.tracks.length, 0);
-        return `<article class="card clickable" data-open-download-rewayah="${escapeHtml(riwayah)}"><div><h3>${escapeHtml(riwayah)}</h3><p>${Object.keys(reciters).length} قارئ - ${total} ملف</p></div>${ICONS.chevronLeft}</article>`;
+        return `<button class="card card-navigation" type="button" data-open-download-rewayah="${escapeHtml(riwayah)}"><span class="card-navigation-copy"><span class="card-navigation-title">${escapeHtml(riwayah)}</span><span class="card-navigation-detail">${Object.keys(reciters).length} قارئ - ${total} ملف</span></span>${ICONS.chevronLeft}</button>`;
       }).join("")}</div>
     `);
     return;
@@ -863,7 +945,7 @@ async function renderDownloads() {
     const reciters = tree[state.selectedDownloadRewayah] || {};
     setViewHtml(`
       <div class="crumb"><button class="back-button" data-back-downloads>العودة للروايات</button><div class="title-copy"><h2>${escapeHtml(state.selectedDownloadRewayah)}</h2><p>اختر الشيخ لفتح ملفاته الصوتية</p></div></div>
-      <div class="grid">${Object.entries(reciters).map(([id, reciter]) => `<article class="card clickable" data-open-download-reciter="${id}"><div><h3>الشيخ ${escapeHtml(reciter.reciterName)}</h3><p>${reciter.tracks.length} سور محملة</p></div>${ICONS.chevronLeft}</article>`).join("")}</div>
+      <div class="grid">${Object.entries(reciters).map(([id, reciter]) => `<button class="card card-navigation" type="button" data-open-download-reciter="${escapeHtml(id)}"><span class="card-navigation-copy"><span class="card-navigation-title">الشيخ ${escapeHtml(reciter.reciterName)}</span><span class="card-navigation-detail">${reciter.tracks.length} سور محملة</span></span>${ICONS.chevronLeft}</button>`).join("")}</div>
     `);
     return;
   }
@@ -885,8 +967,8 @@ function downloadCard(track) {
   return `
     <article class="card ${playing ? "playing" : ""}">
       <div class="row-actions">
-        <button class="play-button ${playing ? "active" : ""}" data-play-download="${track.id}" title="تشغيل">${playing ? ICONS.pause : ICONS.play}</button>
-        <button class="download-button delete" data-delete-download="${track.id}" title="حذف">${ICONS.delete}</button>
+        <button class="play-button ${playing ? "active" : ""}" data-play-download="${escapeHtml(track.id)}" title="${playing ? "إيقاف مؤقت" : "تشغيل"}" aria-label="${playing ? "إيقاف" : "تشغيل"} ${escapeHtml(track.surahName)} بصوت الشيخ ${escapeHtml(track.reciterName)}">${playing ? ICONS.pause : ICONS.play}</button>
+        <button class="download-button delete" data-delete-download="${escapeHtml(track.id)}" title="حذف" aria-label="حذف سورة ${escapeHtml(track.surahName)} بصوت الشيخ ${escapeHtml(track.reciterName)} من التنزيلات">${ICONS.delete}</button>
       </div>
       <div>
         <h4>${escapeHtml(track.surahName)}</h4>
@@ -903,7 +985,7 @@ function renderHistory() {
     ${items.length ? `<div class="grid">${items.map(([key, item]) => {
       const pct = Math.min(100, Math.round((item.timestamp / Math.max(item.duration || 1, 1)) * 100));
       return `
-        <article class="card clickable" data-history-play="${key}">
+        <article class="card">
           <div>
             <h3>${escapeHtml(item.surahName)} - الشيخ ${escapeHtml(item.reciterName)}</h3>
             <p>${escapeHtml(item.riwayahName || "")}</p>
@@ -912,6 +994,7 @@ function renderHistory() {
             <strong class="gold">${formatTime(item.timestamp)} / ${formatTime(item.duration)}</strong>
             <div class="progress-mini"><span style="width:${pct}%"></span></div>
           </div>
+          <button class="play-button history-play-button" type="button" data-history-play="${escapeHtml(key)}" aria-label="استكمال ${escapeHtml(item.surahName)} بصوت ${escapeHtml(item.reciterName)}">${ICONS.play}</button>
         </article>
       `;
     }).join("")}</div>` : empty("لا يوجد سجل استماع بعد", "ابدأ الاستماع لأي سورة وسنحفظ تقدمك هنا تلقائيًا.")}
@@ -976,6 +1059,19 @@ function playRadio(id) {
   playAudio({ url: radio.url, title: radio.name, subtitle: "بث مباشر", isRadio: true });
 }
 
+function showPlaybackError(error) {
+  const message = error?.name === "NotAllowedError"
+    ? "يتطلب التشغيل تفاعلًا. اضغط تشغيل للمحاولة مجددًا."
+    : "تعذر تشغيل الصوت. تحقق من اتصالك أو جرّب مصدرًا آخر.";
+  els.playbackStatus.textContent = message;
+  els.playbackStatus.classList.remove("hidden");
+}
+
+function clearPlaybackError() {
+  els.playbackStatus.textContent = "";
+  els.playbackStatus.classList.add("hidden");
+}
+
 function toggleCurrentSurah(reciterId, surahId) {
   const track = state.currentAudio;
   const isSameSurah = track && !track.isRadio
@@ -983,7 +1079,7 @@ function toggleCurrentSurah(reciterId, surahId) {
     && Number(track.surahId) === Number(surahId);
   if (!isSameSurah) return false;
 
-  if (els.audio.paused) els.audio.play().catch(() => {});
+  if (els.audio.paused) els.audio.play().then(clearPlaybackError).catch(showPlaybackError);
   else els.audio.pause();
   updatePlayer();
   return true;
@@ -1048,6 +1144,7 @@ function playAudio(track) {
     return;
   }
   radioRecovery.stop();
+  clearPlaybackError();
   state.currentAudio = track;
   state.activeTrackKey = track.isRadio ? "" : `${track.reciterId}_${track.surahId}`;
   state.activeDownloadId = track.downloadedId || "";
@@ -1057,7 +1154,7 @@ function playAudio(track) {
   els.audio.playbackRate = Number(els.speed.value);
   els.audio.volume = Number(els.volume.value);
   els.audio.play().then(updatePlayer).catch((err) => {
-    if (err.name !== "AbortError") updatePlayer();
+    if (err.name !== "AbortError") showPlaybackError(err);
   });
   updatePlayer();
   if (!track.isRadio) {
@@ -1295,12 +1392,18 @@ async function deleteOfflineAudio(id) {
 }
 
 async function refreshDownloads() {
-  const db = await openDb();
-  state.downloaded = await new Promise((resolve, reject) => {
-    const request = db.transaction(STORE, "readonly").objectStore(STORE).getAll();
-    request.onsuccess = () => resolve((request.result || []).map(({ audioBlob, ...meta }) => meta));
-    request.onerror = () => reject(request.error);
-  });
+  try {
+    const db = await openDb();
+    state.downloaded = await new Promise((resolve, reject) => {
+      const request = db.transaction(STORE, "readonly").objectStore(STORE).getAll();
+      request.onsuccess = () => resolve((request.result || []).map(({ audioBlob, ...meta }) => meta));
+      request.onerror = () => reject(request.error);
+    });
+    state.downloadStatus = "ready";
+  } catch (error) {
+    state.downloadStatus = "error";
+    throw error;
+  }
 }
 
 function setSleepTimer(minutes) {
@@ -1318,10 +1421,12 @@ function setSleepTimer(minutes) {
 }
 
 document.addEventListener("click", async (event) => {
-  const target = event.target.closest("[data-tab],[data-go-tab],[data-radio-cat],[data-radio-country],[data-fav-radios],[data-play-radio],[data-fav-radio],[data-open-rewayah],[data-open-reciter],[data-back-library],[data-fav-reciter],[data-play-surah],[data-download-surah],[data-delete-download],[data-open-download-rewayah],[data-open-download-reciter],[data-back-downloads],[data-play-download],[data-history-play],[data-resume-latest],[data-auto-next]");
+  const target = event.target.closest("[data-tab],[data-go-tab],[data-radio-cat],[data-radio-country],[data-fav-radios],[data-play-radio],[data-fav-radio],[data-open-rewayah],[data-open-reciter],[data-back-library],[data-fav-reciter],[data-play-surah],[data-download-surah],[data-delete-download],[data-open-download-rewayah],[data-open-download-reciter],[data-back-downloads],[data-play-download],[data-history-play],[data-resume-latest],[data-auto-next],[data-retry-downloads]");
   if (!target) return;
 
-  if (target.dataset.tab || target.dataset.goTab) {
+  if (target.hasAttribute("data-retry-downloads")) {
+    renderDownloads();
+  } else if (target.dataset.tab || target.dataset.goTab) {
     state.activeTab = target.dataset.tab || target.dataset.goTab;
     if (state.activeTab === "downloads") state.downloadsStep = "rewayat";
     render();
@@ -1402,6 +1507,24 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+els.tabs.forEach((tab) => {
+  tab.addEventListener("keydown", (event) => {
+    if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const tabs = [...els.tabs];
+    const currentIndex = tabs.indexOf(tab);
+    const direction = document.documentElement.dir === "rtl" ? -1 : 1;
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? tabs.length - 1
+        : (currentIndex + (event.key === "ArrowRight" ? direction : -direction) + tabs.length) % tabs.length;
+    state.activeTab = tabs[nextIndex].dataset.tab;
+    render();
+    tabs[nextIndex].focus();
+  });
+});
+
 document.addEventListener("input", (event) => {
   const input = event.target;
   if (input.id === "radioSearch") {
@@ -1427,7 +1550,7 @@ els.playPause.addEventListener("click", () => {
   if (!state.currentAudio) return;
   if (els.audio.paused) {
     radioRecovery.resume();
-    els.audio.play().catch(() => updatePlayer());
+    els.audio.play().then(clearPlaybackError).catch(showPlaybackError);
   } else {
     radioRecovery.pause();
     els.audio.pause();
@@ -1482,6 +1605,9 @@ els.volume.addEventListener("input", () => {
   writeStorage("atheer_volume", els.volume.value);
 });
 els.audio.addEventListener("play", updatePlayer);
+els.audio.addEventListener("error", () => {
+  if (state.currentAudio && !state.currentAudio.isRadio) showPlaybackError(new Error());
+});
 els.audio.addEventListener("pause", () => {
   saveCurrentProgress(true);
   updatePlayer();
@@ -1544,7 +1670,9 @@ try {
   setViewHtml(empty("حدث خطأ في العرض", "يرجى إعادة تحميل الصفحة."));
 }
 updateNetworkStatus();
-refreshDownloads().catch(() => {}).finally(() => {
+refreshDownloads().catch((err) => {
+  console.warn("[أثير] refreshDownloads failed:", err);
+}).finally(() => {
   if (state.activeTab === "home") refreshHomeDownloads();
   else if (state.activeTab === "downloads") render();
   Promise.allSettled([fetchRadios(), fetchReciters()]).then(() => {

@@ -86,23 +86,27 @@
           </p>
         </div>
         <nav class="tabs" role="tablist" aria-label="أقسام التطبيق">
-          <button class="tab active" type="button" role="tab" aria-selected="true"  data-tab="home"      id="tab-home"      aria-controls="view">الرئيسية</button>
-          <button class="tab"        type="button" role="tab" aria-selected="false" data-tab="radios"    id="tab-radios"    aria-controls="view">الراديو والبث</button>
-          <button class="tab"        type="button" role="tab" aria-selected="false" data-tab="library"   id="tab-library"   aria-controls="view">مكتبة التلاوات</button>
-          <button class="tab"        type="button" role="tab" aria-selected="false" data-tab="downloads" id="tab-downloads" aria-controls="view">تنزيلاتي</button>
-          <button class="tab"        type="button" role="tab" aria-selected="false" data-tab="history"   id="tab-history"   aria-controls="view">سجل الاستماع</button>
-          <button class="tab"        type="button" role="tab" aria-selected="false" data-tab="settings"  id="tab-settings"  aria-controls="view">الإعدادات</button>
+          <button class="tab active" type="button" role="tab" aria-selected="true" tabindex="0"  data-tab="home"      id="tab-home"      aria-controls="view">الرئيسية</button>
+          <button class="tab"        type="button" role="tab" aria-selected="false" tabindex="-1" data-tab="radios"    id="tab-radios"    aria-controls="view">الراديو والبث</button>
+          <button class="tab"        type="button" role="tab" aria-selected="false" tabindex="-1" data-tab="library"   id="tab-library"   aria-controls="view">مكتبة التلاوات</button>
+          <button class="tab"        type="button" role="tab" aria-selected="false" tabindex="-1" data-tab="downloads" id="tab-downloads" aria-controls="view">تنزيلاتي</button>
+          <button class="tab"        type="button" role="tab" aria-selected="false" tabindex="-1" data-tab="history"   id="tab-history"   aria-controls="view">سجل الاستماع</button>
+          <button class="tab"        type="button" role="tab" aria-selected="false" tabindex="-1" data-tab="settings"  id="tab-settings"  aria-controls="view">الإعدادات</button>
           <span class="tab-indicator" id="tabIndicator" aria-hidden="true"></span>
         </nav>
       </div>
     </header>
 
     <main class="shell main" id="main-content">
+      <aside class="offline-callout hidden" id="storageWarning" role="status" aria-live="polite">
+        تعذّر استخدام التخزين المحلي. قد لا تُحفَظ تفضيلاتك وسجل الاستماع؛ اسمح للمتصفح بحفظ بيانات هذا الموقع ثم أعد تحميل الصفحة.
+      </aside>
       <aside class="network-status hidden" id="networkStatus" aria-label="حالة الاتصال">
         <p id="networkMessage" role="status" aria-live="polite"></p>
         <button class="network-action" type="button" data-go-tab="downloads">عرض تنزيلاتي</button>
       </aside>
-      <section id="view" role="tabpanel" aria-live="polite" aria-atomic="false"></section>
+      <p class="sr-only" id="viewAnnouncement" role="status" aria-live="polite" aria-atomic="true"></p>
+      <section id="view" role="tabpanel" aria-labelledby="tab-home" tabindex="0"></section>
     </main>
 
     <!-- SEO_DIRECTORY -->
@@ -160,6 +164,7 @@
           <div class="live-row hidden" id="liveRow" aria-live="polite">
             <span>● يبث الآن مباشرة</span>
           </div>
+          <p class="playback-status hidden" id="playbackStatus" role="status" aria-live="polite"></p>
         </div>
 
         <div class="player-actions" style="display: flex; gap: 4px;">

@@ -120,7 +120,7 @@ test("Worker renders crawlable pages, metadata, sitemap, robots, and noindex err
     assert.equal(canonicalCount(homeHtml), 1);
     assert.match(homeHtml, /<h2>استمع إلى القرآن الكريم كما تحب<\/h2>/);
     assert.match(homeHtml, /يجمع أثير القرآن إذاعات قرآنية مباشرة، وتلاوات السور بصوت القراء، مع إمكانية حفظ السور للاستماع دون اتصال/);
-    assert.match(homeHtml, /<a href="\/browse\/">تصفح سور القرآن الكريم والقراء والإذاعات<\/a>/);
+    assert.match(homeHtml, /<a href="\/browse\/">تصفح الفهرس الكامل للسور والقراء والإذاعات<\/a>/);
     assert.doesNotMatch(homeHtml, /class="seo-card"/);
     assert.match(homeHtml, /<script type="application\/ld\+json">/);
     const websiteScript = [...homeHtml.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)]

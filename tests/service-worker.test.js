@@ -112,7 +112,7 @@ test("activation removes only this app's older cache versions", async () => {
   let activationPromise;
   worker.handlers.get("activate")({ waitUntil(promise) { activationPromise = promise; } });
   await activationPromise;
-  assert.deepEqual(worker.deletedCaches, ["atheer-quran-v8"]);
+  assert.deepEqual(worker.deletedCaches, ["atheer-quran-v8", "atheer-quran-v9"]);
 });
 
 test("audio and cross-origin requests bypass service-worker caching", async () => {
