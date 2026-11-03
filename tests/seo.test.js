@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import worker from "../src/worker.js";
 import { radioPath, reciterPath, slugify, surahPath } from "../src/seo.js";
@@ -13,6 +14,7 @@ const reciters = [{
   moshaf: [{ id: 70, name: "حفص عن عاصم", server: "https://audio.example/reader/", surah_list: "1,2" }]
 }];
 const radios = [{ id: 8, name: "إذاعة تجريبية", url: "https://stream.example/live" }];
+const appShell = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const env = {
   SITE_URL: "https://site.example",
   ASSETS: { fetch: async () => new Response(`<!doctype html><html lang="ar" dir="rtl"><head><title>old</title><meta name="description" content="old"><link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png"><script src="/theme.js"></script><link rel="stylesheet" href="/tokens.css"></head><body><a class="skip-link" href="#main-content">انتقل إلى المحتوى الرئيسي</a><header><div class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"></svg></div><button id="themeToggle"></button></header><main id="main-content"></main><!-- SEO_DIRECTORY --><section>old directory</section><!-- SEO_DIRECTORY_END --><script type="module" src="/assets/main.js"></script></body></html>`, { headers: { "content-type": "text/html" } }) }
@@ -46,6 +48,12 @@ function assertBrandMetadata(html) {
   assert.match(html, /class="brand-mark"[^>]*>\s*<svg viewBox="0 0 24 24"[^>]*stroke-width="1\.2">/);
   assert.doesNotMatch(html, /Cloudflare/);
 }
+
+test("app shell uses the main page heading for its primary listening message", () => {
+  assert.match(appShell, /<p class="brand-name">/);
+  assert.match(appShell, /<h1 class="hero-title">\s*استمع، وتابع من حيث توقفت\./);
+  assert.doesNotMatch(appShell, /<h1>[\s\S]*?<\/h1>[\s\S]*?<h2 class="hero-title">/);
+});
 
 test("Arabic public URLs are stable and ID-qualified", () => {
   assert.match(surahPath(surahs[0]), /^\/surah\/001-/);
