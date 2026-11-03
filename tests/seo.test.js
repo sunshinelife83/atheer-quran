@@ -94,6 +94,32 @@ test("caches complete public SEO pages without proxying audio", async () => {
   }
 });
 
+test("reports edge-cache failures but still serves generated public pages", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  const originalWarn = console.warn;
+  const warnings = [];
+  globalThis.fetch = fixtureFetch;
+  globalThis.caches = { default: {
+    match: async () => { throw new Error("cache read failed"); },
+    put: async () => { throw new Error("cache write failed"); }
+  } };
+  console.warn = (...warning) => warnings.push(warning);
+  try {
+    const response = await worker.fetch(new Request(`https://atheer-quran.workers.dev${surahPath(surahs[0])}`), env);
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /<h1>سورة الفاتحة<\/h1>/);
+    assert.equal(warnings.length, 2);
+    assert.match(warnings[0][0], /Could not read the public page cache/);
+    assert.match(warnings[1][0], /Could not store the public response at the edge/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.warn = originalWarn;
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+});
+
 test("accepts the explicitly configured workers.dev production origin", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = fixtureFetch;

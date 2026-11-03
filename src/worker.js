@@ -41,7 +41,9 @@ async function cachedPublic(request, context, render, { includeSearch = false, c
     try {
       const hit = await cache.match(key);
       if (hit) return withCacheHeaders(hit, BROWSER_CACHE_CONTROL, EDGE_CACHE_CONTROL);
-    } catch { /* Cache API may be unavailable in local/test runtimes. */ }
+    } catch (error) {
+      console.warn("Could not read the public page cache; rendering from source.", error);
+    }
   }
 
   const response = await render();
@@ -53,9 +55,15 @@ async function cachedPublic(request, context, render, { includeSearch = false, c
       // Cache API entry TTL follows Cache-Control; keep it at the edge TTL, not the browser TTL.
       const storageResponse = withCacheHeaders(cached.clone(), EDGE_CACHE_CONTROL, EDGE_CACHE_CONTROL);
       const write = cache.put(key, storageResponse);
-      if (context?.waitUntil) context.waitUntil(write.catch(() => {}));
+      if (context?.waitUntil) {
+        context.waitUntil(write.catch((error) => {
+          console.warn("Could not write the public page cache.", error);
+        }));
+      }
       else await write;
-    } catch { /* Serve the response even when edge storage is unavailable. */ }
+    } catch (error) {
+      console.warn("Could not store the public response at the edge.", error);
+    }
   }
   return cached;
 }
@@ -119,7 +127,9 @@ function siteOrigin(request, env) {
     try {
       const parsed = new URL(configured);
       if (parsed.protocol === "https:") return parsed.origin;
-    } catch { /* Invalid production URL falls through to the local request host. */ }
+    } catch (error) {
+      console.warn("SITE_URL is invalid; using the request host.", error);
+    }
   }
   const requestUrl = new URL(request.url);
   if (["localhost", "127.0.0.1", "::1"].includes(requestUrl.hostname)) return `https://${requestUrl.host}`;

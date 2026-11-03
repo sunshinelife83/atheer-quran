@@ -59,7 +59,9 @@ self.addEventListener("fetch", (event) => {
     fetch(request).then((response) => {
       if (response.ok) {
         const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone)).catch(() => {});
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone)).catch((error) => {
+          console.warn("[أثير] Could not cache the latest app asset.", error);
+        });
       }
       return response;
     }).catch(async () => {

@@ -2,6 +2,7 @@ import { RadioRecovery } from "./src/audio/radio-recovery.js";
 import { normalizeRadios } from "./src/audio/radio-url.js";
 import { normalizeRadioMetadata, normalizeReciterMetadata, safeExternalUrl } from "./src/api/metadata.js";
 import { deleteOfflineAudio, getOfflineAudio, listOfflineAudio, saveOfflineAudio } from "./src/storage/offline-audio.js";
+import { runViewTransition } from "./src/ui/view-transition.js";
 
 const API = "/api/v3";
 const VALID_TABS = new Set(["home", "radios", "library", "downloads", "history", "settings"]);
@@ -302,6 +303,7 @@ function announceView() {
 
 function setViewHtml(markup, { animate = true } = {}) {
   const revision = ++viewRevision;
+  const canAnimate = animate && !reducedMotion.matches && document.visibilityState === "visible";
   const focused = document.activeElement;
   const restoreId = focused instanceof HTMLInputElement && els.view.contains(focused) ? focused.id : "";
   const selectionStart = restoreId ? focused.selectionStart : null;
@@ -345,20 +347,28 @@ function setViewHtml(markup, { animate = true } = {}) {
       els.view.dispatchEvent(new CustomEvent("viewcommit"));
     };
 
-    if (animate && !reducedMotion.matches && document.startViewTransition) {
-      document.startViewTransition(updateDOM);
-    } else {
+    if (canAnimate && runViewTransition(updateDOM, {
+      documentRef: document,
+      reducedMotion: reducedMotion.matches,
+      reportError: (message, error) => console.error(message, error)
+    })) {
+      return;
+    }
+
+    if (canAnimate && document.visibilityState === "visible") {
       updateDOM();
-      if (animate && !reducedMotion.matches && !restoreId && lastInputKind !== "keyboard") {
+      if (!restoreId && lastInputKind !== "keyboard") {
         els.view.animate(
           [{ opacity: 0.72, transform: "translateY(4px)" }, { opacity: 1, transform: "translateY(0)" }],
           { duration: 180, easing: "cubic-bezier(0.25, 1, 0.5, 1)" }
         );
       }
+    } else {
+      updateDOM();
     }
   };
 
-  const shouldExit = animate && !reducedMotion.matches && !restoreId && lastInputKind !== "keyboard" && els.view.childElementCount > 0 && !document.startViewTransition;
+  const shouldExit = canAnimate && !restoreId && lastInputKind !== "keyboard" && els.view.childElementCount > 0 && typeof document.startViewTransition !== "function";
   if (!shouldExit) {
     commit();
     return;

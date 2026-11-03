@@ -6,10 +6,11 @@ import { runInNewContext } from "node:vm";
 const serviceWorkerSource = await readFile(new URL("../public/sw.js", import.meta.url), "utf8");
 const scope = "https://app.example/site/";
 
-function createWorker(indexHtml = "") {
+function createWorker(indexHtml = "", { failCacheWrites = false } = {}) {
   const handlers = new Map();
   const entries = new Map();
   const deletedCaches = [];
+  const warnings = [];
   let offline = false;
   const cache = {
     async addAll(urls) {
@@ -21,6 +22,7 @@ function createWorker(indexHtml = "") {
       }
     },
     async put(request, response) {
+      if (failCacheWrites) throw new Error("Cache storage unavailable");
       entries.set(new URL(request.url || request, scope).href, response);
     },
     async match(request) {
@@ -59,9 +61,10 @@ function createWorker(indexHtml = "") {
     location: { origin: new URL(scope).origin },
     URL,
     Response,
-    Promise
+    Promise,
+    console: { warn: (...warning) => warnings.push(warning) }
   });
-  return { handlers, entries, deletedCaches, fetchMock, setOffline(value) { offline = value; } };
+  return { handlers, entries, deletedCaches, fetchMock, warnings, setOffline(value) { offline = value; } };
 }
 
 test("install precaches Vite's fingerprinted same-origin assets", async () => {
@@ -132,4 +135,18 @@ test("audio and cross-origin requests bypass service-worker caching", async () =
   worker.handlers.get("fetch")(audioEvent);
   worker.handlers.get("fetch")(externalEvent);
   assert.equal(worker.entries.size, 0);
+});
+
+test("reports app-asset cache write failures while keeping the network response", async () => {
+  const worker = createWorker("", { failCacheWrites: true });
+  const fetchEvent = {
+    request: { method: "GET", url: `${scope}assets/app.js`, destination: "script", mode: "cors" },
+    response: null,
+    respondWith(promise) { this.response = promise; }
+  };
+  worker.handlers.get("fetch")(fetchEvent);
+  assert.equal((await fetchEvent.response).status, 200);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(worker.warnings.length, 1);
+  assert.match(worker.warnings[0][0], /Could not cache the latest app asset/);
 });
