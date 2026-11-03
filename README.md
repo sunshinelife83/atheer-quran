@@ -59,4 +59,6 @@ npm test
 - `index.html`, `app.js`, `styles.css`: التطبيق والواجهة الحالية.
 - `src/worker.js`: صفحات المحتوى العامة، metadata، Sitemap وrobots وproxy بيانات API.
 - `src/seo.js`, `public/seo.css`: توليد الروابط والـslugs وHTML الدلالي وتنسيق صفحات المحتوى.
+- `src/api/metadata.js`: التحقق من metadata الخارجية وإسقاط الحقول غير المستخدمة قبل إدخالها إلى حالة التطبيق.
+- `src/storage/offline-audio.js`: عمليات `IndexedDB` للتنزيلات، ولا تُعد العملية ناجحة حتى يكتمل الـtransaction.
 - `tests/`: اختبارات وحدات وتكامل لصفحات SEO وWorker.

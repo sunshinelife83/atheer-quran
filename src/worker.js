@@ -274,7 +274,8 @@ async function handleApi(request, context) {
       const response = await fetch(upstreamUrl, { headers: { accept: "application/json" }, cf: { cacheTtl: CACHE_SECONDS, cacheEverything: true } });
       if (!response.ok) return Response.json({ error: "Upstream API unavailable" }, { status: 502, headers });
       return new Response(response.body, { status: 200, headers: { "content-type": "application/json; charset=utf-8", "cache-control": BROWSER_CACHE_CONTROL, "cdn-cache-control": EDGE_CACHE_CONTROL, "x-content-type-options": "nosniff", "x-robots-tag": "noindex" } });
-    } catch {
+    } catch (error) {
+      console.error("Metadata API proxy failed.", { endpoint: match[1], error });
       return Response.json({ error: "Upstream API unavailable" }, { status: 502, headers });
     }
   }, { includeSearch: true, cacheSafe: [...url.searchParams.keys()].every((key) => key === "language") });
@@ -307,7 +308,8 @@ export default {
           if (match[1] === "surah") return surahPage(request, env, match[2]);
           if (match[1] === "reciter") return reciterPage(request, env, match[2]);
           return radioPage(request, env, match[2]);
-        } catch {
+        } catch (error) {
+          console.error("Public content page failed.", { route: match[1], error });
           return htmlError(request, env, 502, "تعذر تحميل بيانات المحتوى", "مصدر البيانات الخارجي غير متاح مؤقتًا. حاول مرة أخرى لاحقًا.");
         }
       }, { cacheSafe: !url.search, version: HTML_CACHE_VERSION });

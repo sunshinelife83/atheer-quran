@@ -1,5 +1,7 @@
 import { RadioRecovery } from "./src/audio/radio-recovery.js";
 import { normalizeRadios } from "./src/audio/radio-url.js";
+import { normalizeRadioMetadata, normalizeReciterMetadata, safeExternalUrl } from "./src/api/metadata.js";
+import { deleteOfflineAudio, getOfflineAudio, listOfflineAudio, saveOfflineAudio } from "./src/storage/offline-audio.js";
 
 const API = "/api/v3";
 const VALID_TABS = new Set(["home", "radios", "library", "downloads", "history", "settings"]);
@@ -168,6 +170,7 @@ const radioRecovery = new RadioRecovery(els.audio, (status, attempt) => {
   const label = els.liveRow.querySelector("span");
   if (label) label.textContent = messages[status] || messages.connecting;
 });
+let playbackIntent = 0;
 
 function updateNetworkStatus() {
   const online = navigator.onLine;
@@ -184,10 +187,17 @@ function notifyOffline(message) {
 
 function readJson(key, fallback) {
   try {
-    return JSON.parse(readStorage(key) || JSON.stringify(fallback));
-  } catch {
-    return fallback;
+    const stored = JSON.parse(readStorage(key) || JSON.stringify(fallback));
+    const validShape = Array.isArray(fallback)
+      ? Array.isArray(stored)
+      : stored !== null && typeof stored === "object" && !Array.isArray(stored);
+    if (validShape) return stored;
+    console.warn(`[أثير] Ignoring malformed local data for "${key}".`);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    console.warn(`[أثير] Ignoring malformed local data for "${key}".`, error);
   }
+  return fallback;
 }
 
 function writeJson(key, value) {
@@ -198,16 +208,6 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
   })[char]);
-}
-
-function safeExternalUrl(value) {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" ? url.href : "";
-  } catch (error) {
-    if (error instanceof TypeError) return "";
-    throw error;
-  }
 }
 
 function normalize(text) {
@@ -376,7 +376,9 @@ function setViewHtml(markup, { animate = true } = {}) {
     [{ opacity: 1, transform: "translateY(0)" }, { opacity: 0, transform: "translateY(-2px)" }],
     { duration: 100, easing: "cubic-bezier(0.4, 0, 1, 1)", fill: "both" }
   );
-  exitAnim.finished.catch(() => {}).then(() => {
+  exitAnim.finished.catch((error) => {
+    if (error.name !== "AbortError") throw error;
+  }).then(() => {
     exitAnim.cancel();
     commit();
   });
@@ -418,29 +420,41 @@ function loading(text) {
   `);
 }
 
+async function fetchMetadata(endpoint, collection) {
+  const response = await fetch(`${API}/${endpoint}?language=ar`);
+  if (!response.ok) throw new Error(`${endpoint} API returned ${response.status}`);
+  const payload = await response.json();
+  if (!Array.isArray(payload?.[collection])) throw new Error(`${endpoint} API returned an invalid ${collection} list`);
+  const normalizeRecords = endpoint === "radios" ? normalizeRadioMetadata : normalizeReciterMetadata;
+  const records = normalizeRecords(payload[collection]);
+  if (records.length !== payload[collection].length) {
+    console.warn(`[أثير] Ignored invalid ${endpoint} API records.`);
+  }
+  if (collection === "reciters" && !records.length) throw new Error("Reciters API returned no usable records");
+  return records;
+}
+
 async function fetchRadios() {
-  const cached = mergeRadioSources(normalizeRadios(readJson("atheer_cached_radios", [])));
+  const cachedRecords = normalizeRadioMetadata(readJson("atheer_cached_radios", []));
+  const cached = mergeRadioSources(normalizeRadios(cachedRecords));
   if (cached.length) {
     state.radios = cached;
     state.categorizedRadios = categorizeRadios(cached);
     writeJson("atheer_cached_radios", cached);
-    fetch(`${API}/radios?language=ar`).then((r) => r.json()).then((data) => {
-      if (Array.isArray(data.radios)) {
-        state.radios = mergeRadioSources(normalizeRadios(data.radios));
-        state.categorizedRadios = categorizeRadios(state.radios);
-        writeJson("atheer_cached_radios", state.radios);
-        if (state.activeTab === "radios") render();
-        else if (state.activeTab === "home") refreshHomeRadioFavorites();
-      }
-    }).catch(() => {});
+    fetchMetadata("radios", "radios").then((radios) => {
+      state.radios = mergeRadioSources(normalizeRadios(radios));
+      state.categorizedRadios = categorizeRadios(state.radios);
+      writeJson("atheer_cached_radios", state.radios);
+      if (state.activeTab === "radios") render();
+      else if (state.activeTab === "home") refreshHomeRadioFavorites();
+    }).catch((error) => console.warn("[أثير] Could not refresh cached radios.", error));
     return;
   }
 
   try {
-    const res = await fetch(`${API}/radios?language=ar`);
-    const data = await res.json();
-    state.radios = mergeRadioSources(normalizeRadios(Array.isArray(data.radios) ? data.radios : FALLBACK_RADIOS));
-  } catch {
+    state.radios = mergeRadioSources(normalizeRadios(await fetchMetadata("radios", "radios")));
+  } catch (error) {
+    console.warn("[أثير] Radio metadata is unavailable; using built-in stations.", error);
     state.radios = mergeRadioSources(FALLBACK_RADIOS);
   }
   writeJson("atheer_cached_radios", state.radios);
@@ -463,25 +477,21 @@ function mergeRadioSources(radios) {
 }
 
 async function fetchReciters() {
-  const cached = readJson("atheer_cached_reciters", []);
+  const cached = normalizeReciterMetadata(readJson("atheer_cached_reciters", []));
   if (cached.length) {
     state.reciters = cached;
     state.groupedRewayat = groupReciters(cached);
-    fetch(`${API}/reciters?language=ar`).then((r) => r.json()).then((data) => {
-      if (Array.isArray(data.reciters)) {
-        const sorted = data.reciters.sort((a, b) => a.name.localeCompare(b.name, "ar"));
-        state.reciters = sorted;
-        state.groupedRewayat = groupReciters(sorted);
-        writeJson("atheer_cached_reciters", sorted);
-        if (state.activeTab === "library") render();
-      }
-    }).catch(() => {});
+    fetchMetadata("reciters", "reciters").then((reciters) => {
+      const sorted = reciters.sort((a, b) => a.name.localeCompare(b.name, "ar"));
+      state.reciters = sorted;
+      state.groupedRewayat = groupReciters(sorted);
+      writeJson("atheer_cached_reciters", sorted);
+      if (state.activeTab === "library") render();
+    }).catch((error) => console.warn("[أثير] Could not refresh cached reciters.", error));
     return;
   }
 
-  const res = await fetch(`${API}/reciters?language=ar`);
-  const data = await res.json();
-  state.reciters = (data.reciters || []).sort((a, b) => a.name.localeCompare(b.name, "ar"));
+  state.reciters = (await fetchMetadata("reciters", "reciters")).sort((a, b) => a.name.localeCompare(b.name, "ar"));
   writeJson("atheer_cached_reciters", state.reciters);
   state.groupedRewayat = groupReciters(state.reciters);
 }
@@ -820,10 +830,7 @@ function renderLibrary() {
       setViewHtml(`${sectionHeader("المكتبة الصوتية", "بيانات القراء تحتاج اتصالًا بالإنترنت", "", "")}${empty("المكتبة غير متاحة دون اتصال", "يمكنك الاستماع إلى السور التي نزّلتها مسبقًا.", '<button class="cta-button" type="button" data-go-tab="downloads">عرض تنزيلاتي</button>')}`);
       return;
     }
-    loading("جاري جلب القراء والروايات...");
-    Promise.all([fetchReciters(), refreshDownloads()]).then(render).catch(() => {
-      setViewHtml(empty("تعذر تحميل المكتبة", "تحقق من الاتصال بالإنترنت ثم أعد المحاولة."));
-    });
+    loadLibrary();
     return;
   }
 
@@ -870,6 +877,18 @@ function renderLibrary() {
     </div>
     ${suwar.length ? `<div class="grid">${suwar.map((surah) => surahCard(surah, reciter, group.riwayahName)).join("")}</div>` : empty("لا توجد سور", "لا توجد سورة تطابق البحث الحالي.")}
   `);
+}
+
+function loadLibrary() {
+  loading("جاري جلب القراء والروايات...");
+  Promise.all([fetchReciters(), refreshDownloads()]).then(render).catch((error) => {
+    console.error("[أثير] Could not load the recitation library.", error);
+    setViewHtml(empty(
+      "تعذر تحميل المكتبة",
+      "تحقق من الاتصال بالإنترنت ثم أعد المحاولة.",
+      '<button class="cta-button" type="button" data-retry-library>إعادة المحاولة</button>'
+    ));
+  });
 }
 
 function reciterCard(reciter) {
@@ -1048,6 +1067,7 @@ function findReciter(reciterId) {
 }
 
 function playRadio(id) {
+  const intent = ++playbackIntent;
   if (notifyOffline("لا يمكن تشغيل البث المباشر دون اتصال بالإنترنت؛ جرّب السور المحفوظة في تنزيلاتي.")) return;
   const radio = state.radios.find((item) => item.id === Number(id));
   if (!radio) return;
@@ -1056,7 +1076,7 @@ function playRadio(id) {
     els.audio.pause();
     return;
   }
-  playAudio({ url: radio.url, title: radio.name, subtitle: "بث مباشر", isRadio: true });
+  playAudio({ url: radio.url, title: radio.name, subtitle: "بث مباشر", isRadio: true }, intent);
 }
 
 function showPlaybackError(error) {
@@ -1079,13 +1099,19 @@ function toggleCurrentSurah(reciterId, surahId) {
     && Number(track.surahId) === Number(surahId);
   if (!isSameSurah) return false;
 
-  if (els.audio.paused) els.audio.play().then(clearPlaybackError).catch(showPlaybackError);
+  if (els.audio.paused) {
+    const intent = playbackIntent;
+    els.audio.play()
+      .then(() => { if (intent === playbackIntent) clearPlaybackError(); })
+      .catch((error) => { if (intent === playbackIntent) showPlaybackError(error); });
+  }
   else els.audio.pause();
   updatePlayer();
   return true;
 }
 
 function playSurah(surahId, reciterId, moshafId) {
+  const intent = ++playbackIntent;
   if (toggleCurrentSurah(reciterId, surahId)) return;
   const reciter = currentLibraryReciter(reciterId, moshafId);
   if (!reciter) return;
@@ -1095,7 +1121,7 @@ function playSurah(surahId, reciterId, moshafId) {
   const surahList = (reciter.moshaf.surah_list || "").split(",").map((x) => Number(x.trim())).filter(Boolean);
   const downloaded = state.downloaded.find((item) => item.id === id);
   if (downloaded) {
-    playDownloaded(id);
+    playDownloaded(id, intent);
     return;
   }
   playAudio({
@@ -1110,38 +1136,53 @@ function playSurah(surahId, reciterId, moshafId) {
     riwayahName: group.riwayahName,
     serverUrl: reciter.moshaf.server,
     surahList
-  });
+  }, intent);
 }
 
-async function playDownloaded(id) {
-  const record = await getOfflineAudio(id);
-  if (!record?.audioBlob) {
-    alert("تعذر قراءة الملف المحفوظ.");
-    return;
+async function playDownloaded(downloadId, intent = ++playbackIntent) {
+  try {
+    const record = await getOfflineAudio(downloadId);
+    if (intent !== playbackIntent) return;
+    if (!record?.audioBlob) {
+      alert("تعذر قراءة الملف المحفوظ.");
+      return;
+    }
+    if (toggleCurrentSurah(record.reciterId, record.surahId)) return;
+    startDownloadedAudio(record, intent);
+  } catch (error) {
+    if (intent !== playbackIntent) return;
+    console.error("[أثير] Could not read downloaded audio.", error);
+    alert("تعذر قراءة الملف المحفوظ. تحقق من مساحة التخزين ثم أعد المحاولة.");
   }
-  if (toggleCurrentSurah(record.reciterId, record.surahId)) return;
+}
+
+function startDownloadedAudio(downloadRecord, intent) {
   if (state.activeBlobUrl) URL.revokeObjectURL(state.activeBlobUrl);
-  state.activeBlobUrl = URL.createObjectURL(record.audioBlob);
-  const dlReciter = findReciter(record.reciterId);
-  const surahList = dlReciter ? (dlReciter.moshaf.surah_list || "").split(",").map((x) => Number(x.trim())).filter(Boolean) : null;
+  state.activeBlobUrl = URL.createObjectURL(downloadRecord.audioBlob);
+  const dlReciter = findReciter(downloadRecord.reciterId);
+  const surahList = dlReciter ? (dlReciter.moshaf.surah_list || "").split(",").map(Number).filter(Boolean) : null;
   playAudio({
     url: state.activeBlobUrl,
-    title: record.surahName,
-    subtitle: record.reciterName,
+    title: downloadRecord.surahName,
+    subtitle: downloadRecord.reciterName,
     isRadio: false,
-    surahId: record.surahId,
-    reciterId: record.reciterId,
-    riwayahName: record.riwayahName,
-    serverUrl: record.serverUrl,
-    downloadedId: record.id,
+    surahId: downloadRecord.surahId,
+    reciterId: downloadRecord.reciterId,
+    riwayahName: downloadRecord.riwayahName,
+    serverUrl: downloadRecord.serverUrl,
+    downloadedId: downloadRecord.id,
     surahList
-  });
+  }, intent);
 }
 
-function playAudio(track) {
+function playAudio(track, intent = ++playbackIntent) {
   if (!navigator.onLine && !track.url.startsWith("blob:")) {
     notifyOffline("هذا الصوت غير محفوظ على الجهاز؛ اتصل بالإنترنت أو اختر سورة من تنزيلاتي.");
     return;
+  }
+  if (state.activeBlobUrl && state.activeBlobUrl !== track.url) {
+    URL.revokeObjectURL(state.activeBlobUrl);
+    state.activeBlobUrl = "";
   }
   radioRecovery.stop();
   clearPlaybackError();
@@ -1153,8 +1194,10 @@ function playAudio(track) {
   els.audio.loop = state.repeatOne && !track.isRadio;
   els.audio.playbackRate = Number(els.speed.value);
   els.audio.volume = Number(els.volume.value);
-  els.audio.play().then(updatePlayer).catch((err) => {
-    if (err.name !== "AbortError") showPlaybackError(err);
+  els.audio.play().then(() => {
+    if (intent === playbackIntent) updatePlayer();
+  }).catch((error) => {
+    if (intent === playbackIntent && error.name !== "AbortError") showPlaybackError(error);
   });
   updatePlayer();
   if (!track.isRadio) {
@@ -1175,13 +1218,14 @@ async function playAdjacent(direction) {
   const nextId = track.surahId + direction;
   if (nextId < 1 || nextId > 114) return;
   if (track.surahList && !track.surahList.includes(nextId)) return;
+  const intent = ++playbackIntent;
   const downloaded = state.downloaded.find((item) =>
     Number(item.reciterId) === Number(track.reciterId) &&
     Number(item.surahId) === Number(nextId) &&
     (!track.riwayahName || item.riwayahName === track.riwayahName)
   );
   if (downloaded) {
-    await playDownloaded(downloaded.id);
+    await playDownloaded(downloaded.id, intent);
     return;
   }
   playAudio({
@@ -1190,16 +1234,17 @@ async function playAdjacent(direction) {
     title: `سورة ${SURAH_NAMES[nextId - 1]}`,
     surahId: nextId,
     downloadedId: ""
-  });
+  }, intent);
 }
 
 function resumeLatest() {
   const latest = getLatestProgress();
   if (!latest) return;
+  const intent = ++playbackIntent;
   if (toggleCurrentSurah(latest.reciterId, latest.surahId)) return;
   const downloaded = state.downloaded.find((d) => d.reciterId === latest.reciterId && d.surahId === latest.surahId);
-  if (downloaded) playDownloaded(downloaded.id);
-  else if (latest.serverUrl) playAudio({ ...latest, url: streamUrl(latest.serverUrl, latest.surahId), title: latest.surahName, subtitle: latest.reciterName, isRadio: false });
+  if (downloaded) playDownloaded(downloaded.id, intent);
+  else if (latest.serverUrl) playAudio({ ...latest, url: streamUrl(latest.serverUrl, latest.surahId), title: latest.surahName, subtitle: latest.reciterName, isRadio: false }, intent);
 }
 
 function updatePlayer() {
@@ -1247,7 +1292,6 @@ function syncPlayingCards() {
       playing = !!latest && isCurrentSurahPlaying(latest.reciterId, latest.surahId);
     }
     container.classList.toggle("playing", playing);
-    // Fix: also update the live-badge text so it reverts when radio is stopped/exited
     const liveBadge = container.querySelector(".live-badge");
     if (liveBadge && radioBtn) {
       liveBadge.innerHTML = `<i class="live-dot"></i>${playing ? "قيد التشغيل" : "بث مباشر"}`;
@@ -1259,11 +1303,16 @@ function syncPlayingCards() {
       if (!isMiniItem) {
         btn.classList.toggle("active", playing);
         btn.title = playing ? "إيقاف مؤقت" : "تشغيل";
-        btn.setAttribute("aria-label", playing ? "إيقاف مؤقت" : "تشغيل");
+        btn.setAttribute("aria-label", playbackActionLabel(btn, playing));
       }
     }
   });
   syncHomeResumeControls();
+}
+
+function playbackActionLabel(button, playing) {
+  const label = button.getAttribute("aria-label") || "تشغيل";
+  return label.replace(/^(?:تشغيل|إيقاف(?: مؤقت)?)/, playing ? "إيقاف مؤقت" : "تشغيل");
 }
 
 function syncHomeResumeControls() {
@@ -1338,7 +1387,8 @@ async function downloadSurah(surahId, reciterId, moshafId) {
     });
     await refreshDownloads();
     state.downloadSuccessId = id;
-  } catch {
+  } catch (error) {
+    console.error("[أثير] Could not download the selected surah.", error);
     alert("تعذر إتمام التنزيل. يمكنك الاستماع مباشرة عند توفر الاتصال.");
   } finally {
     state.downloadingIds.delete(id);
@@ -1349,56 +1399,9 @@ async function downloadSurah(surahId, reciterId, moshafId) {
   }
 }
 
-const DB_NAME = "AtheerQuranOfflineDB";
-const STORE = "offline_audios";
-
-function openDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function saveOfflineAudio(record) {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const request = db.transaction(STORE, "readwrite").objectStore(STORE).put(record);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function getOfflineAudio(id) {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const request = db.transaction(STORE, "readonly").objectStore(STORE).get(id);
-    request.onsuccess = () => resolve(request.result || null);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function deleteOfflineAudio(id) {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const request = db.transaction(STORE, "readwrite").objectStore(STORE).delete(id);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
-}
-
 async function refreshDownloads() {
   try {
-    const db = await openDb();
-    state.downloaded = await new Promise((resolve, reject) => {
-      const request = db.transaction(STORE, "readonly").objectStore(STORE).getAll();
-      request.onsuccess = () => resolve((request.result || []).map(({ audioBlob, ...meta }) => meta));
-      request.onerror = () => reject(request.error);
-    });
+    state.downloaded = (await listOfflineAudio()).map(({ audioBlob, ...meta }) => meta);
     state.downloadStatus = "ready";
   } catch (error) {
     state.downloadStatus = "error";
@@ -1421,10 +1424,12 @@ function setSleepTimer(minutes) {
 }
 
 document.addEventListener("click", async (event) => {
-  const target = event.target.closest("[data-tab],[data-go-tab],[data-radio-cat],[data-radio-country],[data-fav-radios],[data-play-radio],[data-fav-radio],[data-open-rewayah],[data-open-reciter],[data-back-library],[data-fav-reciter],[data-play-surah],[data-download-surah],[data-delete-download],[data-open-download-rewayah],[data-open-download-reciter],[data-back-downloads],[data-play-download],[data-history-play],[data-resume-latest],[data-auto-next],[data-retry-downloads]");
+  const target = event.target.closest("[data-tab],[data-go-tab],[data-radio-cat],[data-radio-country],[data-fav-radios],[data-play-radio],[data-fav-radio],[data-open-rewayah],[data-open-reciter],[data-back-library],[data-fav-reciter],[data-play-surah],[data-download-surah],[data-delete-download],[data-open-download-rewayah],[data-open-download-reciter],[data-back-downloads],[data-play-download],[data-history-play],[data-resume-latest],[data-auto-next],[data-retry-downloads],[data-retry-library]");
   if (!target) return;
 
-  if (target.hasAttribute("data-retry-downloads")) {
+  if (target.hasAttribute("data-retry-library")) {
+    loadLibrary();
+  } else if (target.hasAttribute("data-retry-downloads")) {
     renderDownloads();
   } else if (target.dataset.tab || target.dataset.goTab) {
     state.activeTab = target.dataset.tab || target.dataset.goTab;
@@ -1482,9 +1487,14 @@ document.addEventListener("click", async (event) => {
     downloadSurah(target.dataset.downloadSurah, target.dataset.reciter, target.dataset.moshaf);
   } else if (target.dataset.deleteDownload) {
     if (confirm("هل تريد حذف هذا الملف الصوتي من جهازك؟")) {
-      await deleteOfflineAudio(target.dataset.deleteDownload);
-      await refreshDownloads();
-      render();
+      try {
+        await deleteOfflineAudio(target.dataset.deleteDownload);
+        await refreshDownloads();
+        render();
+      } catch (error) {
+        console.error("[أثير] Could not delete the downloaded audio.", error);
+        alert("تعذر حذف الملف المحفوظ. تحقق من مساحة التخزين في المتصفح ثم أعد المحاولة.");
+      }
     }
   } else if (target.dataset.openDownloadRewayah) {
     state.selectedDownloadRewayah = target.dataset.openDownloadRewayah;
@@ -1548,9 +1558,12 @@ document.addEventListener("input", (event) => {
 els.themeToggle.addEventListener("click", () => setTheme(state.theme === "dark" ? "light" : "dark"));
 els.playPause.addEventListener("click", () => {
   if (!state.currentAudio) return;
+  const intent = ++playbackIntent;
   if (els.audio.paused) {
     radioRecovery.resume();
-    els.audio.play().then(clearPlaybackError).catch(showPlaybackError);
+    els.audio.play()
+      .then(() => { if (intent === playbackIntent) clearPlaybackError(); })
+      .catch((error) => { if (intent === playbackIntent) showPlaybackError(error); });
   } else {
     radioRecovery.pause();
     els.audio.pause();
@@ -1558,10 +1571,12 @@ els.playPause.addEventListener("click", () => {
   }
 });
 function exitPlayer() {
+  playbackIntent++;
   radioRecovery.stop();
   els.audio.pause();
   els.audio.removeAttribute("src");
   if (state.activeBlobUrl) URL.revokeObjectURL(state.activeBlobUrl);
+  state.activeBlobUrl = "";
   state.currentAudio = null;
   state.activeTrackKey = "";
   state.activeDownloadId = "";
@@ -1645,7 +1660,9 @@ els.audio.addEventListener("ended", () => {
 
 if ("serviceWorker" in navigator && import.meta.env?.PROD) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    navigator.serviceWorker.register("/sw.js").catch((error) => {
+      console.warn("[أثير] Offline app-shell caching is unavailable.", error);
+    });
   });
 }
 

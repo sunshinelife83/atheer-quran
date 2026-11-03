@@ -9,7 +9,9 @@ export function normalizeRadioUrl(value) {
       url.hostname = ACTIVE_RADIO_HOST;
       return url.toString();
     }
-  } catch { /* Leave invalid or non-URL values unchanged for the caller to handle. */ }
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
+  }
   return value;
 }
 
